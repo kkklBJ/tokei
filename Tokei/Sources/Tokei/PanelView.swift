@@ -156,7 +156,7 @@ struct PanelView: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(Theme.claude)
                         Text(error)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: Theme.fontSize(12), weight: .medium))
                             .foregroundStyle(Theme.tSecondary)
                     } else {
                         ProgressView().controlSize(.small)
@@ -191,19 +191,19 @@ struct PanelView: View {
             } label: {
                 HStack(spacing: 9) {
                     Image(systemName: "timer")
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(size: Theme.fontSize(16), weight: .bold))
                         .foregroundStyle(Theme.brand)
                         .overlay(alignment: .topTrailing) {
                             if let e = Self.festiveEmoji() {
-                                Text(e).font(.system(size: 11)).offset(x: 7, y: -7)
+                                Text(e).font(.system(size: Theme.fontSize(11))).offset(x: 7, y: -7)
                             }
                         }
                     VStack(alignment: .leading, spacing: 0) {
                         Text("Tokei")
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .font(.system(size: Theme.fontSize(15), weight: .bold, design: .rounded))
                             .tracking(0.5)
                         Text("知度 · AI 用量")
-                            .font(.system(size: 9))
+                            .font(.system(size: Theme.fontSize(9)))
                             .foregroundStyle(Theme.tTertiary)
                     }
                 }
@@ -214,7 +214,7 @@ struct PanelView: View {
             updatePill
             if store.syncFailStreak >= 3 {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 11))
+                    .font(.system(size: Theme.fontSize(11)))
                     .foregroundStyle(.orange)
                     .help("多设备同步已连续失败 \(store.syncFailStreak) 次：\(store.syncStatus)\n\(store.syncDetail)")
             }
@@ -223,13 +223,13 @@ struct PanelView: View {
                 deviceScopePicker
             }
             Text(store.lastUpdated)
-                .font(.system(size: 9.5, design: .monospaced))
+                .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
                 .foregroundStyle(Theme.tTertiary)
             Button {
                 withAnimation(.easeInOut(duration: 0.35)) { mode = mode == .projects ? .cards : .projects }
             } label: {
                 Image(systemName: "folder")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: Theme.fontSize(11), weight: .medium))
                     .foregroundStyle(mode == .projects ? Theme.claude : Theme.tTertiary)
                     .frame(width: 24, height: 24)
                     .background(Circle().fill(Color.primary.opacity(0.06)))
@@ -241,7 +241,7 @@ struct PanelView: View {
                 mode = mode == .quotaHistory ? .cards : .quotaHistory
             } label: {
                 Image(systemName: "chart.xyaxis.line")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: Theme.fontSize(11), weight: .medium))
                     .foregroundStyle(mode == .quotaHistory ? Theme.claude : Theme.tTertiary)
                     .frame(width: 24, height: 24)
                     .background(Circle().fill(Color.primary.opacity(0.06)))
@@ -253,7 +253,7 @@ struct PanelView: View {
                 withAnimation(.easeInOut(duration: 0.35)) { mode = mode == .dashboard ? .cards : .dashboard }
             } label: {
                 Image(systemName: "chart.bar")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: Theme.fontSize(11), weight: .medium))
                     .foregroundStyle(mode == .dashboard ? Theme.claude : Theme.tTertiary)
                     .frame(width: 24, height: 24)
                     .background(Circle().fill(Color.primary.opacity(0.06)))
@@ -265,7 +265,7 @@ struct PanelView: View {
                 withAnimation(.easeInOut(duration: 0.35)) { mode = mode == .settings ? .cards : .settings }
             } label: {
                 Image(systemName: "gearshape")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: Theme.fontSize(11), weight: .medium))
                     .foregroundStyle(mode == .settings ? Theme.claude : Theme.tTertiary)
                     .frame(width: 24, height: 24)
                     .background(Circle().fill(Color.primary.opacity(0.06)))
@@ -437,10 +437,10 @@ struct PanelView: View {
             }
             if let plan = x.plan {
                 HStack {
-                    Text("plan").font(.system(size: 11)).foregroundStyle(Theme.tTertiary)
+                    Text("plan").font(.system(size: Theme.fontSize(11))).foregroundStyle(Theme.tTertiary)
                     Spacer()
                     Text(plan)
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .font(.system(size: Theme.fontSize(10), weight: .semibold, design: .monospaced))
                         .foregroundStyle(Theme.tSecondary)
                         .padding(.horizontal, 7).padding(.vertical, 2)
                         .background(Capsule().fill(Theme.codex.opacity(0.16)))
@@ -459,22 +459,22 @@ struct PanelView: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "arrow.clockwise.circle.fill")
-                    .font(.system(size: 10))
+                    .font(.system(size: Theme.fontSize(10)))
                     .foregroundStyle(Theme.codex)
                 Text("重置卡")
-                    .font(.system(size: 11))
+                    .font(.system(size: Theme.fontSize(11)))
                     .foregroundStyle(Theme.tSecondary)
                 Text("\(cards.count) 张")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .font(.system(size: Theme.fontSize(10), weight: .semibold, design: .monospaced))
                     .foregroundStyle(Theme.tPrimary)
                 Spacer(minLength: 6)
                 if let nearest = expirations.first {
                     Text("最近 \(Fmt.beijingTime(nearest)) · 北京时间")
-                        .font(.system(size: 9.5, design: .monospaced))
+                        .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
                         .foregroundStyle(Theme.tTertiary)
                 }
                 Image(systemName: codexResetCardsOpen ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.system(size: Theme.fontSize(8), weight: .bold))
                     .foregroundStyle(Theme.tTertiary)
             }
             .contentShape(Rectangle())
@@ -486,26 +486,26 @@ struct PanelView: View {
             VStack(alignment: .leading, spacing: 7) {
                 HStack {
                     Text("到期时间")
-                        .font(.system(size: 9.5, weight: .medium))
+                        .font(.system(size: Theme.fontSize(9.5), weight: .medium))
                         .foregroundStyle(Theme.tTertiary)
                     Spacer()
                     Text("北京时间 UTC+8")
-                        .font(.system(size: 9, design: .monospaced))
+                        .font(.system(size: Theme.fontSize(9), design: .monospaced))
                         .foregroundStyle(Theme.tTertiary)
                 }
                 ForEach(Array(expirations.enumerated()), id: \.offset) { index, expiry in
                     HStack(spacing: 7) {
                         Text("\(index + 1)")
-                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                            .font(.system(size: Theme.fontSize(9), weight: .semibold, design: .monospaced))
                             .foregroundStyle(Theme.codex)
                             .frame(width: 16, height: 16)
                             .background(Circle().fill(Theme.codex.opacity(0.14)))
                         Text("完整重置")
-                            .font(.system(size: 10.5, weight: .medium))
+                            .font(.system(size: Theme.fontSize(10.5), weight: .medium))
                             .foregroundStyle(Theme.tSecondary)
                         Spacer()
                         Text(Fmt.beijingTime(expiry, full: true))
-                            .font(.system(size: 9.5, design: .monospaced))
+                            .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
                             .foregroundStyle(Theme.tPrimary)
                     }
                 }
@@ -603,7 +603,7 @@ struct PanelView: View {
                 Text(r.usage_available
                      ? "来自 Grok Build 本地推理日志；成本未提供。"
                      : "旧版日志未保存真实用量，当前仅展示上下文与执行指标。")
-                    .font(.system(size: 8.5))
+                    .font(.system(size: Theme.fontSize(8.5)))
                     .foregroundStyle(Theme.tTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             } else if g.pct == nil {
@@ -626,10 +626,10 @@ struct PanelView: View {
                 }
                 if let plan = g.plan, !plan.isEmpty {
                     HStack {
-                        Text("plan").font(.system(size: 11)).foregroundStyle(Theme.tTertiary)
+                        Text("plan").font(.system(size: Theme.fontSize(11))).foregroundStyle(Theme.tTertiary)
                         Spacer()
                         Text(plan)
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .font(.system(size: Theme.fontSize(10), weight: .semibold, design: .monospaced))
                             .foregroundStyle(Theme.tSecondary)
                             .padding(.horizontal, 7).padding(.vertical, 2)
                             .background(Capsule().fill(Theme.grok.opacity(0.16)))
@@ -639,7 +639,7 @@ struct PanelView: View {
             } else if g.stale == true {
                 if r.sessions > 0 || r.usage_calls > 0 { thinDivider }
                 Text("额度周期已结束，等待 Grok 写入新日志")
-                    .font(.system(size: 9.5, design: .monospaced))
+                    .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
                     .foregroundStyle(Color.orange.opacity(0.88))
             }
         }
@@ -655,9 +655,9 @@ struct PanelView: View {
         let updated = stat.q_updated.map { Fmt.reset($0) } ?? "更新时间未知"
         return HStack(spacing: 5) {
             Image(systemName: "clock")
-                .font(.system(size: 9))
+                .font(.system(size: Theme.fontSize(9)))
             Text("额度来源 \(sourceLabel) · \(updated)")
-                .font(.system(size: 9.5, design: .monospaced))
+                .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
             Spacer()
         }
         .foregroundStyle(Theme.tTertiary)
@@ -695,13 +695,13 @@ struct PanelView: View {
         VStack(spacing: 4) {
             HStack {
                 Text(name)
-                    .font(.system(size: 11))
+                    .font(.system(size: Theme.fontSize(11)))
                     .foregroundStyle(Theme.tSecondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
                 Spacer(minLength: 6)
                 Text(String(format: "占用 %.0f%%", usedPct))
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(.system(size: Theme.fontSize(12), weight: .semibold, design: .monospaced))
                     .foregroundStyle(Theme.tPrimary)
             }
             MiniBar(value: max(0, min(100, 100 - usedPct)), tint: tint.opacity(0.75))
@@ -861,24 +861,24 @@ struct PanelView: View {
             } else if r.tasks > 0 {
                 HStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("任务").font(.system(size: 10)).foregroundStyle(Theme.tTertiary)
+                        Text("任务").font(.system(size: Theme.fontSize(10))).foregroundStyle(Theme.tTertiary)
                         Text("\(r.tasks)")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(.system(size: Theme.fontSize(16), weight: .bold, design: .rounded))
                             .foregroundStyle(Theme.tPrimary)
                     }
                     if r.completed > 0 {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("完成").font(.system(size: 10)).foregroundStyle(Theme.tTertiary)
+                            Text("完成").font(.system(size: Theme.fontSize(10))).foregroundStyle(Theme.tTertiary)
                             Text("\(r.completed)")
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .font(.system(size: Theme.fontSize(16), weight: .bold, design: .rounded))
                                 .foregroundStyle(.green)
                         }
                     }
                     if r.failed > 0 {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("失败").font(.system(size: 10)).foregroundStyle(Theme.tTertiary)
+                            Text("失败").font(.system(size: Theme.fontSize(10))).foregroundStyle(Theme.tTertiary)
                             Text("\(r.failed)")
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .font(.system(size: Theme.fontSize(16), weight: .bold, design: .rounded))
                                 .foregroundStyle(.red.opacity(0.8))
                         }
                     }
@@ -924,7 +924,7 @@ struct PanelView: View {
         let inactive = cards.filter { $0.visible && !$0.active }.map(\.name)
         if !inactive.isEmpty {
             Text("未检测到本地数据: " + inactive.joined(separator: " · "))
-                .font(.system(size: 9))
+                .font(.system(size: Theme.fontSize(9)))
                 .foregroundStyle(Theme.tTertiary)
                 .frame(maxWidth: .infinity)
         }
@@ -932,16 +932,16 @@ struct PanelView: View {
 
     var emptyHint: some View {
         Text("暂无数据")
-            .font(.system(size: 10))
+            .font(.system(size: Theme.fontSize(10)))
             .foregroundStyle(Theme.tTertiary)
     }
 
     func modelBadge(_ model: String, tint: Color) -> some View {
         HStack {
-            Text("model").font(.system(size: 11)).foregroundStyle(Theme.tTertiary)
+            Text("model").font(.system(size: Theme.fontSize(11))).foregroundStyle(Theme.tTertiary)
             Spacer()
             Text(model)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(.system(size: Theme.fontSize(10), weight: .semibold, design: .monospaced))
                 .foregroundStyle(Theme.tSecondary)
                 .padding(.horizontal, 7).padding(.vertical, 2)
                 .background(Capsule().fill(tint.opacity(0.16)))
@@ -980,10 +980,10 @@ struct PanelView: View {
         HStack(spacing: 7) {
             Circle().fill(tint.gradient).frame(width: 8, height: 8)
                 .shadow(color: tint.opacity(0.6), radius: 3)
-            Text(title).font(.system(size: 14, weight: .bold))
+            Text(title).font(.system(size: Theme.fontSize(14), weight: .bold))
             if sessions > 0 {
                 Text("\(sessions)")
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .font(.system(size: Theme.fontSize(10), weight: .bold, design: .rounded))
                     .foregroundStyle(tint)
                     .padding(.horizontal, 5).padding(.vertical, 1.5)
                     .background(Capsule().fill(tint.opacity(0.12)))
@@ -997,7 +997,7 @@ struct PanelView: View {
         HStack(spacing: 7) {
             Circle().fill(tint.gradient).frame(width: 8, height: 8)
                 .shadow(color: tint.opacity(0.6), radius: 3)
-            Text(title).font(.system(size: 14, weight: .bold))
+            Text(title).font(.system(size: Theme.fontSize(14), weight: .bold))
             Spacer()
         }
     }
@@ -1030,18 +1030,18 @@ struct PanelView: View {
     func sessionRow(_ name: String, _ total: Int) -> some View {
         HStack {
             Image(systemName: "dot.radiowaves.left.and.right")
-                .font(.system(size: 9)).foregroundStyle(Theme.tTertiary)
-            Text("本会话 \(name)").font(.system(size: 10)).foregroundStyle(Theme.tTertiary)
+                .font(.system(size: Theme.fontSize(9))).foregroundStyle(Theme.tTertiary)
+            Text("本会话 \(name)").font(.system(size: Theme.fontSize(10))).foregroundStyle(Theme.tTertiary)
             Spacer()
             Text(Fmt.human(total))
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .font(.system(size: Theme.fontSize(10), weight: .medium, design: .monospaced))
                 .foregroundStyle(Theme.tSecondary)
         }
     }
 
     var disclaimer: some View {
         Text(mode == .settings ? "Made by lank" : "成本按 API 价估算,非订阅实付")
-            .font(.system(size: 9))
+            .font(.system(size: Theme.fontSize(9)))
             .foregroundStyle(Theme.tTertiary)
     }
 
@@ -1053,12 +1053,12 @@ struct PanelView: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "chart.pie.fill")
-                    .font(.system(size: 9)).foregroundStyle(tint)
+                    .font(.system(size: Theme.fontSize(9))).foregroundStyle(tint)
                 Text("按模型 (\(models.count))")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: Theme.fontSize(11), weight: .medium))
                     .foregroundStyle(Theme.tSecondary)
                 Image(systemName: open.wrappedValue ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.system(size: Theme.fontSize(8), weight: .bold))
                     .foregroundStyle(Theme.tTertiary)
                 Spacer()
             }
@@ -1068,7 +1068,7 @@ struct PanelView: View {
         if open.wrappedValue {
             VStack(alignment: .leading, spacing: 6) {
                 Text("按模型 · \(sel.label)")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: Theme.fontSize(11), weight: .semibold))
                     .foregroundStyle(Theme.tSecondary)
                 ForEach(models) { m in
                     let total = tokenModelTotal(m, reasonIncludedInOutput: reasonIncludedInOutput)
@@ -1083,26 +1083,26 @@ struct PanelView: View {
                         } label: {
                             HStack(spacing: 7) {
                                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                                    .font(.system(size: 7, weight: .bold))
+                                    .font(.system(size: Theme.fontSize(7), weight: .bold))
                                     .foregroundStyle(Theme.tTertiary)
                                     .frame(width: 8)
                                 Circle().fill(tint.opacity(0.7)).frame(width: 5, height: 5)
-                                Text(m.name).font(.system(size: 11.5)).foregroundStyle(Theme.tPrimary)
+                                Text(m.name).font(.system(size: Theme.fontSize(11.5))).foregroundStyle(Theme.tPrimary)
                                     .lineLimit(1)
                                 Spacer(minLength: 4)
                                 Text(Fmt.human(total))
-                                    .font(.system(size: 9.5, design: .monospaced))
+                                    .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
                                     .foregroundStyle(Theme.tTertiary)
                                 if hit > 0 {
                                     Text(String(format: "%.0f%%", hit))
-                                        .font(.system(size: 9.5, design: .monospaced))
+                                        .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
                                         .foregroundStyle(Theme.tTertiary)
                                         .padding(.horizontal, 4).padding(.vertical, 1)
                                         .background(Capsule().fill(Color.primary.opacity(0.06)))
                                 }
                                 if m.cost > 0 {
                                     Text(String(format: "$%.2f", m.cost))
-                                        .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                                        .font(.system(size: Theme.fontSize(11.5), weight: .semibold, design: .monospaced))
                                         .foregroundStyle(Theme.tPrimary)
                                 }
                             }
@@ -1130,12 +1130,12 @@ struct PanelView: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "chart.pie.fill")
-                    .font(.system(size: 9)).foregroundStyle(tint)
+                    .font(.system(size: Theme.fontSize(9))).foregroundStyle(tint)
                 Text("按模型 (\(models.count))")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: Theme.fontSize(11), weight: .medium))
                     .foregroundStyle(Theme.tSecondary)
                 Image(systemName: open.wrappedValue ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.system(size: Theme.fontSize(8), weight: .bold))
                     .foregroundStyle(Theme.tTertiary)
                 Spacer()
             }
@@ -1145,7 +1145,7 @@ struct PanelView: View {
         if open.wrappedValue {
             VStack(alignment: .leading, spacing: 6) {
                 Text("按模型 · \(sel.label)")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: Theme.fontSize(11), weight: .semibold))
                     .foregroundStyle(Theme.tSecondary)
                 ForEach(models) { m in
                     let isExpanded = expandedModels.contains(m.id)
@@ -1158,27 +1158,27 @@ struct PanelView: View {
                         } label: {
                             HStack(spacing: 7) {
                                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                                    .font(.system(size: 7, weight: .bold))
+                                    .font(.system(size: Theme.fontSize(7), weight: .bold))
                                     .foregroundStyle(Theme.tTertiary)
                                     .frame(width: 8)
                                 Circle().fill(tint.opacity(0.7)).frame(width: 5, height: 5)
-                                Text(m.name).font(.system(size: 11.5)).foregroundStyle(Theme.tPrimary)
+                                Text(m.name).font(.system(size: Theme.fontSize(11.5))).foregroundStyle(Theme.tPrimary)
                                     .lineLimit(1)
                                 Spacer(minLength: 4)
                                 if m.total > 0 {
                                     Text(Fmt.human(m.total))
-                                        .font(.system(size: 9.5, design: .monospaced))
+                                        .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
                                         .foregroundStyle(Theme.tTertiary)
                                 }
                                 if m.hit > 0 {
                                     Text(String(format: "%.0f%%", m.hit))
-                                        .font(.system(size: 9.5, design: .monospaced))
+                                        .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
                                         .foregroundStyle(Theme.tTertiary)
                                         .padding(.horizontal, 4).padding(.vertical, 1)
                                         .background(Capsule().fill(Color.primary.opacity(0.06)))
                                 }
                                 Text(String(format: "$%.2f", m.cost))
-                                    .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                                    .font(.system(size: Theme.fontSize(11.5), weight: .semibold, design: .monospaced))
                                     .foregroundStyle(Theme.tPrimary)
                             }
                             .contentShape(Rectangle())
@@ -1302,20 +1302,20 @@ struct PanelView: View {
     func quotaRow(title: String, pct: Double, detail: String? = nil, reset: Int?, tint: Color) -> some View {
         VStack(spacing: 4) {
             HStack {
-                Text(title).font(.system(size: 11)).foregroundStyle(Theme.tSecondary)
+                Text(title).font(.system(size: Theme.fontSize(11))).foregroundStyle(Theme.tSecondary)
                 if let d = detail {
                     Text(d)
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: Theme.fontSize(10), design: .monospaced))
                         .foregroundStyle(Theme.tTertiary)
                 }
                 Spacer()
                 Text(String(format: "%.0f%%", pct))
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(.system(size: Theme.fontSize(12), weight: .semibold, design: .monospaced))
                     .foregroundStyle(pct <= 15 ? AnyShapeStyle(.red) : AnyShapeStyle(Theme.tPrimary))
                 // 无重置时间时不显示「· ?」，避免分产品行误导。
                 if reset != nil {
                     Text("· \(Fmt.reset(reset))")
-                        .font(.system(size: 9.5, design: .monospaced))
+                        .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
                         .foregroundStyle(Theme.tTertiary)
                 }
             }
@@ -1339,9 +1339,9 @@ struct PanelView: View {
         let updated = stat.q_updated.map { Fmt.reset($0) } ?? "更新时间未知"
         return HStack(spacing: 5) {
             Image(systemName: stale ? "exclamationmark.triangle.fill" : "clock")
-                .font(.system(size: 9))
+                .font(.system(size: Theme.fontSize(9)))
             Text("\(label) · \(updated)")
-                .font(.system(size: 9.5, design: .monospaced))
+                .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
             Spacer()
         }
         .foregroundStyle(stale ? Color.orange.opacity(0.88) : Theme.tTertiary)
@@ -1380,7 +1380,7 @@ struct PanelView: View {
                             }
                         }
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: Theme.fontSize(10), weight: .bold))
                         .foregroundStyle(.white)
                 }
             }
@@ -1397,7 +1397,7 @@ struct PanelView: View {
                     .frame(width: 26, height: 26)
                     .rotationEffect(.degrees(-90))
                 Text("\(Int(p * 100))")
-                    .font(.system(size: 7, weight: .bold, design: .monospaced))
+                    .font(.system(size: Theme.fontSize(7), weight: .bold, design: .monospaced))
                     .foregroundStyle(Theme.tSecondary)
             }
         case .installing:
@@ -1410,13 +1410,13 @@ struct PanelView: View {
                     .frame(width: 26, height: 26)
                     .rotationEffect(.degrees(updateSpin ? 360 : 0))
                 Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: Theme.fontSize(9), weight: .bold))
                     .foregroundStyle(Theme.claude)
             }
         case .failed:
             Button { updater.checkForUpdate() } label: {
                 Image(systemName: "exclamationmark.circle")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: Theme.fontSize(11), weight: .medium))
                     .foregroundStyle(.red)
                     .frame(width: 26, height: 26)
             }
@@ -1444,6 +1444,7 @@ struct PanelView: View {
     @AppStorage("sitReminderInterval") private var sitReminderInterval = 90
     @AppStorage(MenuBarStyle.defaultsKey) private var menuBarStyle = MenuBarStyle.system.rawValue
     @AppStorage(MenuBarDensity.defaultsKey) private var menuBarDensity = MenuBarDensity.full.rawValue
+    @AppStorage(PanelFontSize.defaultsKey) private var panelFontSize = PanelFontSize.small.rawValue
 
     var settingsContent: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1458,6 +1459,7 @@ struct PanelView: View {
                 .frame(width: settingsColumnWidth, alignment: .top)
 
                 VStack(alignment: .leading, spacing: 11) {
+                    settingsAppearanceSection
                     settingsMenuBarSection
                     settingsPrivacySection
                     settingsSystemSection
@@ -1505,6 +1507,22 @@ struct PanelView: View {
         }
     }
 
+    var settingsAppearanceSection: some View {
+        settingsSection("textformat.size", "界面") {
+            settingsStackedValue("字体大小") {
+                Picker("字体大小", selection: $panelFontSize) {
+                    ForEach(PanelFontSize.allCases) { size in
+                        Text(size.label).tag(size.rawValue)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .controlSize(.mini)
+                .frame(width: settingsMenuPickerWidth)
+            }
+        }
+    }
+
     var settingsMenuBarSection: some View {
         settingsSection("menubar.rectangle", "菜单栏") {
             settingsStackedValue("样式") {
@@ -1516,7 +1534,7 @@ struct PanelView: View {
                 .labelsHidden()
                 .pickerStyle(.segmented)
                 .controlSize(.mini)
-                .font(.system(size: 9, weight: .medium))
+                .font(.system(size: Theme.fontSize(9), weight: .medium))
                 .frame(width: settingsMenuPickerWidth)
             }
 
@@ -1542,7 +1560,7 @@ struct PanelView: View {
             }
 
             Text("只影响状态栏剩余额度，与「显示卡片」无关。双额度最多显示前两项；单额度只显示一项。全部关闭时状态栏只留图标，不再显示用量数字。")
-                .font(.system(size: 8.5))
+                .font(.system(size: Theme.fontSize(8.5)))
                 .foregroundStyle(Theme.tTertiary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -1585,7 +1603,7 @@ struct PanelView: View {
             if loginItem.requiresApproval {
                 HStack(spacing: 7) {
                     Text("需要在系统设置中允许")
-                        .font(.system(size: 8.5))
+                        .font(.system(size: Theme.fontSize(8.5)))
                         .foregroundStyle(Theme.tTertiary)
                     Spacer()
                     settingsActionButton(icon: "gear", title: "打开设置") {
@@ -1594,7 +1612,7 @@ struct PanelView: View {
                 }
             } else if let error = loginItem.errorMessage {
                 Text(error)
-                    .font(.system(size: 8.5))
+                    .font(.system(size: Theme.fontSize(8.5)))
                     .foregroundStyle(.red.opacity(0.85))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1631,7 +1649,7 @@ struct PanelView: View {
         settingsSection("lock.shield", "隐私与额度") {
             settingsToggleRow("Grok 实时额度查询", isOn: $grokLiveQuotaEnabled)
             Text("默认只读本机 Grok 日志中的额度快照，不访问网络。开启后才会用本地登录凭据请求 Grok 账单接口，以便拿到最新剩余额度。")
-                .font(.system(size: 8.5))
+                .font(.system(size: Theme.fontSize(8.5)))
                 .foregroundStyle(Theme.tTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1681,7 +1699,7 @@ struct PanelView: View {
 
             if !priceResult.isEmpty && !priceUpdating {
                 Text(priceResult)
-                    .font(.system(size: 9))
+                    .font(.system(size: Theme.fontSize(9)))
                     .foregroundStyle(Theme.tTertiary)
                     .lineLimit(2)
                     .onTapGesture { priceResult = "" }
@@ -1715,7 +1733,7 @@ struct PanelView: View {
                         NSPasteboard.general.setString(debugOutput, forType: .string)
                     } label: {
                         Image(systemName: "doc.on.doc")
-                            .font(.system(size: 10))
+                            .font(.system(size: Theme.fontSize(10)))
                             .foregroundStyle(Theme.tTertiary)
                             .frame(width: 22, height: 22)
                             .background(Circle().fill(Color.primary.opacity(0.06)))
@@ -1732,9 +1750,9 @@ struct PanelView: View {
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: debugExpanded ? "chevron.down" : "chevron.right")
-                                .font(.system(size: 8, weight: .semibold))
+                                .font(.system(size: Theme.fontSize(8), weight: .semibold))
                             Text(debugSummary)
-                                .font(.system(size: 9, design: .monospaced))
+                                .font(.system(size: Theme.fontSize(9), design: .monospaced))
                                 .lineLimit(1)
                             Spacer()
                         }
@@ -1744,7 +1762,7 @@ struct PanelView: View {
 
                     if debugExpanded {
                         Text(debugOutput)
-                            .font(.system(size: 8.5, design: .monospaced))
+                            .font(.system(size: Theme.fontSize(8.5), design: .monospaced))
                             .foregroundStyle(Theme.tSecondary)
                             .lineLimit(16)
                             .fixedSize(horizontal: false, vertical: true)
@@ -1765,7 +1783,7 @@ struct PanelView: View {
 
             if sitReminderOn {
                 HStack {
-                    Text("间隔").font(.system(size: 10)).foregroundStyle(Theme.tTertiary)
+                    Text("间隔").font(.system(size: Theme.fontSize(10))).foregroundStyle(Theme.tTertiary)
                     Spacer()
                     Picker("", selection: $sitReminderInterval) {
                         Text("45m").tag(45); Text("60m").tag(60); Text("90m").tag(90)
@@ -1781,7 +1799,7 @@ struct PanelView: View {
                 }
 
                 Text("基于系统空闲判断连续用机时长,看视频或开会不操作会被当作离开。")
-                    .font(.system(size: 8.5))
+                    .font(.system(size: Theme.fontSize(8.5)))
                     .foregroundStyle(Theme.tTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1810,7 +1828,7 @@ struct PanelView: View {
             if store.syncEnabled {
                 settingsValueRow("设备名") {
                     TextField("hostname", text: $deviceName)
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: Theme.fontSize(10), design: .monospaced))
                         .textFieldStyle(.plain)
                         .frame(width: 110)
                         .multilineTextAlignment(.trailing)
@@ -1832,11 +1850,11 @@ struct PanelView: View {
 
                 settingsValueRow("目录") {
                     Text(syncDir.isEmpty ? "未设置" : (syncDir as NSString).lastPathComponent)
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: Theme.fontSize(10), design: .monospaced))
                         .foregroundStyle(syncDir.isEmpty ? Theme.tTertiary : Theme.tSecondary)
                         .lineLimit(1)
                     Button("选择") { pickSyncDir() }
-                        .font(.system(size: 10))
+                        .font(.system(size: Theme.fontSize(10)))
                         .buttonStyle(.plain)
                         .foregroundStyle(Theme.claude)
                         .disabled(store.syncing)
@@ -1849,7 +1867,7 @@ struct PanelView: View {
                     .disabled(store.syncing || syncDir.isEmpty)
 
                     Spacer()
-                    Text("自动").font(.system(size: 10)).foregroundStyle(Theme.tTertiary)
+                    Text("自动").font(.system(size: Theme.fontSize(10))).foregroundStyle(Theme.tTertiary)
                     Toggle("", isOn: $autoSync)
                         .toggleStyle(.switch).controlSize(.mini).labelsHidden()
                         .disabled(store.syncing)
@@ -1883,7 +1901,7 @@ struct PanelView: View {
                               : (store.syncSucceeded == true ? "checkmark.circle.fill" : "arrow.triangle.2.circlepath"))
                         Text(store.syncStatus)
                     }
-                    .font(.system(size: 8.5, weight: .medium))
+                    .font(.system(size: Theme.fontSize(8.5), weight: .medium))
                     .foregroundStyle(store.syncSucceeded == false ? Theme.claude : Theme.hermes)
                     .help(store.syncDetail)
                 }
@@ -1894,7 +1912,7 @@ struct PanelView: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                         Text("有 \(store.peerLoadIssues.count) 个设备快照读取异常")
                     }
-                    .font(.system(size: 8.5, weight: .medium))
+                    .font(.system(size: Theme.fontSize(8.5), weight: .medium))
                     .foregroundStyle(Theme.claude)
                     .help(store.peerLoadIssues.map(\.summary).joined(separator: "\n"))
                 }
@@ -1909,29 +1927,29 @@ struct PanelView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 5) {
                             Image(systemName: "plus.circle")
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(.system(size: Theme.fontSize(10), weight: .semibold))
                                 .foregroundStyle(Theme.hermes)
                             Text("添加设备")
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(.system(size: Theme.fontSize(10), weight: .semibold))
                                 .foregroundStyle(Theme.tSecondary)
                         }
 
                         if syncDir.isEmpty {
                             Text("请先点击「选择」设置同步目录(需为 Git 仓库)")
-                                .font(.system(size: 9)).foregroundStyle(Theme.tTertiary)
+                                .font(.system(size: Theme.fontSize(9))).foregroundStyle(Theme.tTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
                             copyBlock("读取 \(Self.skillPath) 并帮我创建 Tokei 私有数据仓库,配置多设备同步")
                         } else if hasRemote {
-                            Text("另一台 Mac").font(.system(size: 9, weight: .medium)).foregroundStyle(Theme.tSecondary)
+                            Text("另一台 Mac").font(.system(size: Theme.fontSize(9), weight: .medium)).foregroundStyle(Theme.tSecondary)
                             Text("安装 Tokei.app 后选择同一个数据仓库")
-                                .font(.system(size: 8.5)).foregroundStyle(Theme.tTertiary)
+                                .font(.system(size: Theme.fontSize(8.5))).foregroundStyle(Theme.tTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
                             Rectangle().fill(Color.primary.opacity(0.04)).frame(height: 1)
-                            Text("远程 Linux").font(.system(size: 9, weight: .medium)).foregroundStyle(Theme.tSecondary)
+                            Text("远程 Linux").font(.system(size: Theme.fontSize(9), weight: .medium)).foregroundStyle(Theme.tSecondary)
                             copyBlock(linuxSetupCommand(remote: dataRepo))
                         } else {
                             Text("数据目录未关联 Git 仓库")
-                                .font(.system(size: 9)).foregroundStyle(Theme.tTertiary)
+                                .font(.system(size: Theme.fontSize(9))).foregroundStyle(Theme.tTertiary)
                             copyBlock("读取 \(Self.skillPath) 并帮我创建 Tokei 私有数据仓库,配置多设备同步")
                         }
                     }
@@ -1943,7 +1961,7 @@ struct PanelView: View {
     var settingsRemoteHintSection: some View {
         settingsSection("antenna.radiowaves.left.and.right", "远程采集") {
             Text("多台 Mac 或远程服务器的数据可通过私有 Git 仓库同步,每台设备独立采集、自动加和。")
-                .font(.system(size: 9))
+                .font(.system(size: Theme.fontSize(9)))
                 .foregroundStyle(Theme.tTertiary)
                 .fixedSize(horizontal: false, vertical: true)
             copyBlock("读取 \(Self.skillPath) 帮我配置 Tokei 多设备同步")
@@ -1954,28 +1972,28 @@ struct PanelView: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 5) {
                 Image(systemName: "desktopcomputer")
-                    .font(.system(size: 8)).foregroundStyle(.green)
+                    .font(.system(size: Theme.fontSize(8))).foregroundStyle(.green)
                 Text(deviceName.isEmpty ? "本机" : deviceName)
-                    .font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.tPrimary)
-                Text("(本机)").font(.system(size: 9)).foregroundStyle(Theme.tTertiary)
+                    .font(.system(size: Theme.fontSize(10), weight: .medium)).foregroundStyle(Theme.tPrimary)
+                Text("(本机)").font(.system(size: Theme.fontSize(9))).foregroundStyle(Theme.tTertiary)
             }
             if store.peers.isEmpty {
                 HStack(spacing: 5) {
                     Image(systemName: "clock")
-                        .font(.system(size: 8)).foregroundStyle(Theme.tTertiary)
+                        .font(.system(size: Theme.fontSize(8))).foregroundStyle(Theme.tTertiary)
                     Text("等待其他设备…")
-                        .font(.system(size: 10)).foregroundStyle(Theme.tTertiary)
+                        .font(.system(size: Theme.fontSize(10))).foregroundStyle(Theme.tTertiary)
                 }
             } else {
                 ForEach(store.peers) { p in
                     HStack(spacing: 5) {
                         Image(systemName: "laptopcomputer")
-                            .font(.system(size: 8)).foregroundStyle(Theme.codex)
+                            .font(.system(size: Theme.fontSize(8))).foregroundStyle(Theme.codex)
                         Text(p.deviceId)
-                            .font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.tPrimary)
+                            .font(.system(size: Theme.fontSize(10), weight: .medium)).foregroundStyle(Theme.tPrimary)
                         Spacer()
                         Text(Fmt.reset(Int(p.lastSync.timeIntervalSince1970)))
-                            .font(.system(size: 9, design: .monospaced)).foregroundStyle(Theme.tTertiary)
+                            .font(.system(size: Theme.fontSize(9), design: .monospaced)).foregroundStyle(Theme.tTertiary)
                     }
                 }
             }
@@ -1990,21 +2008,21 @@ struct PanelView: View {
             ZStack {
                 Circle().fill(Theme.claude.opacity(0.16))
                 Image(systemName: "gearshape.fill")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: Theme.fontSize(13), weight: .semibold))
                     .foregroundStyle(Theme.claude)
             }
             .frame(width: 30, height: 30)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("设置")
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .font(.system(size: Theme.fontSize(15), weight: .bold, design: .rounded))
                         .foregroundStyle(Theme.tPrimary)
                     Text("\(Updater.releaseTag) · \(Self.buildVersion)")
-                        .font(.system(size: 8, design: .monospaced))
+                        .font(.system(size: Theme.fontSize(8), design: .monospaced))
                         .foregroundStyle(Theme.tTertiary.opacity(0.6))
                 }
                 Text("显示、同步和诊断")
-                    .font(.system(size: 9.5))
+                    .font(.system(size: Theme.fontSize(9.5)))
                     .foregroundStyle(Theme.tTertiary)
             }
             Spacer()
@@ -2021,7 +2039,7 @@ struct PanelView: View {
             if case .idle = updater.state {
                 Button { updater.checkForUpdate() } label: {
                     Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: Theme.fontSize(10), weight: .semibold))
                         .foregroundStyle(Theme.tTertiary)
                         .frame(width: 24, height: 24)
                         .background(Circle().fill(Color.primary.opacity(0.06)))
@@ -2034,7 +2052,7 @@ struct PanelView: View {
                     .frame(width: 24, height: 24)
             } else if case .upToDate = updater.state {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 12))
+                    .font(.system(size: Theme.fontSize(12)))
                     .foregroundStyle(.green)
                     .frame(width: 24, height: 24)
             }
@@ -2043,7 +2061,7 @@ struct PanelView: View {
                 withAnimation(.easeInOut(duration: 0.25)) { mode = .cards }
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(size: Theme.fontSize(10), weight: .bold))
                     .foregroundStyle(Theme.tTertiary)
                     .frame(width: 24, height: 24)
                     .background(Circle().fill(Color.primary.opacity(0.06)))
@@ -2058,12 +2076,12 @@ struct PanelView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(size: Theme.fontSize(10), weight: .bold))
                     .foregroundStyle(Theme.claude.opacity(0.95))
                     .frame(width: 20, height: 20)
                     .background(Circle().fill(Theme.claude.opacity(0.10)))
                 Text(title)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: Theme.fontSize(12), weight: .semibold))
                     .foregroundStyle(Theme.tSecondary)
             }
             VStack(spacing: 6) { content() }
@@ -2084,8 +2102,8 @@ struct PanelView: View {
     func settingsActionButton(icon: String, title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 4) {
-                Image(systemName: icon).font(.system(size: 9))
-                Text(title).font(.system(size: 10, weight: .medium))
+                Image(systemName: icon).font(.system(size: Theme.fontSize(9)))
+                Text(title).font(.system(size: Theme.fontSize(10), weight: .medium))
             }
             .foregroundStyle(Theme.tPrimary)
             .padding(.horizontal, 10)
@@ -2098,7 +2116,7 @@ struct PanelView: View {
 
     func settingsToggleRow(_ title: String, isOn: Binding<Bool>) -> some View {
         HStack {
-            Text(title).font(.system(size: 11)).foregroundStyle(Theme.tPrimary)
+            Text(title).font(.system(size: Theme.fontSize(11))).foregroundStyle(Theme.tPrimary)
             Spacer()
             Toggle("", isOn: isOn)
                 .toggleStyle(.switch)
@@ -2113,7 +2131,7 @@ struct PanelView: View {
 
     func settingsValueRow<C: View>(_ title: String, @ViewBuilder value: () -> C) -> some View {
         HStack(spacing: 8) {
-            Text(title).font(.system(size: 10)).foregroundStyle(Theme.tTertiary)
+            Text(title).font(.system(size: Theme.fontSize(10))).foregroundStyle(Theme.tTertiary)
             Spacer()
             value()
         }
@@ -2124,7 +2142,7 @@ struct PanelView: View {
     func settingsStackedValue<C: View>(_ title: String, @ViewBuilder value: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title)
-                .font(.system(size: 10))
+                .font(.system(size: Theme.fontSize(10)))
                 .foregroundStyle(Theme.tTertiary)
             value()
         }
@@ -2858,7 +2876,7 @@ struct PanelView: View {
     func copyBlock(_ text: String) -> some View {
         HStack(alignment: .top) {
             Text(text)
-                .font(.system(size: 8, design: .monospaced))
+                .font(.system(size: Theme.fontSize(8), design: .monospaced))
                 .foregroundStyle(Theme.tSecondary)
                 .lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
@@ -2868,7 +2886,7 @@ struct PanelView: View {
                 NSPasteboard.general.setString(text, forType: .string)
             } label: {
                 Image(systemName: "doc.on.doc")
-                    .font(.system(size: 9)).foregroundStyle(Theme.tTertiary)
+                    .font(.system(size: Theme.fontSize(9))).foregroundStyle(Theme.tTertiary)
             }
             .buttonStyle(.plain)
         }
@@ -2894,7 +2912,7 @@ struct PanelView: View {
             Circle().fill(tint.gradient).frame(width: 6, height: 6)
                 .shadow(color: tint.opacity(0.4), radius: 2)
             Text(name)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: Theme.fontSize(11), weight: .medium))
                 .foregroundStyle(Theme.tPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)

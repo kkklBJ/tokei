@@ -29,6 +29,10 @@ extension View {
 
 // 设计系统:颜色 / 间距 / 圆角集中定义,组件语义化复用。
 enum Theme {
+    static func fontSize(_ points: CGFloat) -> CGFloat {
+        PanelFontSize.scaled(points)
+    }
+
     static let claude = Color(red: 0.92, green: 0.52, blue: 0.40)   // 柔珊瑚
     static let codex  = Color(red: 0.42, green: 0.68, blue: 0.98)   // 天青
     static let gemini = Color(red: 0.62, green: 0.52, blue: 0.92)   // 薰衣草
@@ -198,12 +202,12 @@ struct StatBar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
-                Text(name).font(.system(size: 11, weight: .medium))
+                Text(name).font(.system(size: Theme.fontSize(11), weight: .medium))
                     .foregroundStyle(Theme.tPrimary).lineLimit(1)
                 Spacer(minLength: 8)
-                Text(Fmt.human(tokens)).font(.system(size: 9.5, design: .monospaced))
+                Text(Fmt.human(tokens)).font(.system(size: Theme.fontSize(9.5), design: .monospaced))
                     .foregroundStyle(Theme.tTertiary)
-                Text("$\(Int(cost))").font(.system(size: 10, weight: .semibold, design: .monospaced))
+                Text("$\(Int(cost))").font(.system(size: Theme.fontSize(10), weight: .semibold, design: .monospaced))
                     .foregroundStyle(Theme.tSecondary)
             }
             GeometryReader { geo in
@@ -226,16 +230,16 @@ struct MetricCell: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
-                .font(.system(size: 9.5, weight: .bold))
+                .font(.system(size: Theme.fontSize(9.5), weight: .bold))
                 .foregroundStyle(tint)
                 .frame(width: 21, height: 21)
                 .background(Circle().fill(tint.opacity(0.10)))
             VStack(alignment: .leading, spacing: 1) {
                 Text(label)
-                    .font(.system(size: 9.5))
+                    .font(.system(size: Theme.fontSize(9.5)))
                     .foregroundStyle(Theme.tTertiary)
                 Text(value)
-                    .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
+                    .font(.system(size: Theme.fontSize(12.5), weight: .semibold, design: .monospaced))
                     .foregroundStyle(Theme.tPrimary)
             }
             Spacer(minLength: 0)
@@ -259,10 +263,10 @@ struct RingMetricCell: View {
             .frame(width: 21, height: 21)
             VStack(alignment: .leading, spacing: 1) {
                 Text(label)
-                    .font(.system(size: 9.5))
+                    .font(.system(size: Theme.fontSize(9.5)))
                     .foregroundStyle(Theme.tTertiary)
                 Text("\(Int(value.rounded()))%")
-                    .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
+                    .font(.system(size: Theme.fontSize(12.5), weight: .semibold, design: .monospaced))
                     .foregroundStyle(Theme.tPrimary)
             }
             Spacer(minLength: 0)
@@ -279,11 +283,11 @@ struct CostHeadline: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
             Text(value)
-                .font(.system(size: 23, weight: .bold, design: .rounded))
+                .font(.system(size: Theme.fontSize(23), weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
                 .contentTransition(.numericText())
             Text(caption)
-                .font(.system(size: 10))
+                .font(.system(size: Theme.fontSize(10)))
                 .foregroundStyle(Theme.tTertiary)
             Spacer(minLength: 0)
         }
@@ -299,7 +303,7 @@ struct SegmentedTabs: View {
             ForEach(RangeKey.displayCases) { k in
                 let on = k == sel
                 Text(k.label)
-                    .font(.system(size: 12, weight: on ? .semibold : .regular))
+                    .font(.system(size: Theme.fontSize(12), weight: on ? .semibold : .regular))
                     .foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 5)
@@ -337,8 +341,8 @@ struct IconButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 4) {
-                Image(systemName: icon).font(.system(size: 10, weight: .semibold))
-                Text(label).font(.system(size: 11, weight: .medium))
+                Image(systemName: icon).font(.system(size: Theme.fontSize(10), weight: .semibold))
+                Text(label).font(.system(size: Theme.fontSize(11), weight: .medium))
             }
             .foregroundStyle(hover ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
             .padding(.horizontal, 9)

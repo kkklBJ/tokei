@@ -178,7 +178,7 @@ struct DashboardView: View {
         let top = Array(sorted.prefix(8))
         let maxTokens = Double(top.first?.tokens ?? 1)
         return VStack(alignment: .leading, spacing: 9) {
-            Text("模型用量").font(.system(size: 13, weight: .bold))
+            Text("模型用量").font(.system(size: Theme.fontSize(13), weight: .bold))
             ForEach(top) { m in
                 StatBar(name: m.name,
                         tokens: m.tokens ?? ((m.in ?? 0) + (m.out ?? 0)),
@@ -214,20 +214,20 @@ struct DashboardView: View {
                 withAnimation(.easeInOut(duration: 0.25)) { hideProjects.toggle() }
             } label: {
                 HStack(spacing: 5) {
-                    Text("项目排行").font(.system(size: 13, weight: .bold))
+                    Text("项目排行").font(.system(size: Theme.fontSize(13), weight: .bold))
                         .foregroundStyle(Theme.tPrimary)
                     Image(systemName: hideProjects ? "eye.slash.fill" : "eye")
-                        .font(.system(size: 9)).foregroundStyle(Theme.tTertiary)
+                        .font(.system(size: Theme.fontSize(9))).foregroundStyle(Theme.tTertiary)
                     Spacer()
                     Image(systemName: hideProjects ? "chevron.down" : "chevron.up")
-                        .font(.system(size: 9, weight: .bold)).foregroundStyle(Theme.tTertiary)
+                        .font(.system(size: Theme.fontSize(9), weight: .bold)).foregroundStyle(Theme.tTertiary)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             if hideProjects {
                 Text("已隐藏 \(projects.count) 个项目")
-                    .font(.system(size: 10)).foregroundStyle(Theme.tTertiary)
+                    .font(.system(size: Theme.fontSize(10))).foregroundStyle(Theme.tTertiary)
             } else {
                 ForEach(projects) { p in
                     StatBar(name: p.name, tokens: p.tokens, cost: p.cost,
@@ -246,7 +246,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("活跃热力")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: Theme.fontSize(13), weight: .bold))
                 Spacer()
                 Picker("", selection: $heatRange) {
                     Text("周").tag(0); Text("月").tag(1); Text("年").tag(2)
@@ -267,14 +267,14 @@ struct DashboardView: View {
     func heatDetail(_ d: DailyCost) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(d.date).font(.system(size: 13, weight: .bold, design: .monospaced))
+                Text(d.date).font(.system(size: Theme.fontSize(13), weight: .bold, design: .monospaced))
                     .foregroundStyle(Theme.tPrimary)
                 Spacer()
                 Text(String(format: "$%.2f", d.total))
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(.system(size: Theme.fontSize(15), weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                 Button { selectedCell = nil } label: {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 12))
+                    Image(systemName: "xmark.circle.fill").font(.system(size: Theme.fontSize(12)))
                         .foregroundStyle(Theme.tTertiary)
                 }
                 .buttonStyle(.plain)
@@ -284,63 +284,63 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 4) {
                         Circle().fill(Theme.claude).frame(width: 6, height: 6)
-                        Text("Claude").font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.claude)
+                        Text("Claude").font(.system(size: Theme.fontSize(11), weight: .medium)).foregroundStyle(Theme.claude)
                     }
                     Text("\(Fmt.human(d.c_in + d.c_out + d.c_cr + d.c_cw)) tok")
-                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.tTertiary)
+                        .font(.system(size: Theme.fontSize(11), design: .monospaced)).foregroundStyle(Theme.tTertiary)
                     Text(String(format: "$%.2f", d.claude))
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(Theme.tSecondary)
+                        .font(.system(size: Theme.fontSize(12), weight: .semibold, design: .monospaced)).foregroundStyle(Theme.tSecondary)
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 4) {
                         Circle().fill(Theme.codex).frame(width: 6, height: 6)
-                        Text("Codex").font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.codex)
+                        Text("Codex").font(.system(size: Theme.fontSize(11), weight: .medium)).foregroundStyle(Theme.codex)
                     }
                     Text("\(Fmt.human(d.x_in + d.x_out)) tok")
-                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.tTertiary)
+                        .font(.system(size: Theme.fontSize(11), design: .monospaced)).foregroundStyle(Theme.tTertiary)
                     Text(String(format: "$%.2f", d.codex))
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(Theme.tSecondary)
+                        .font(.system(size: Theme.fontSize(12), weight: .semibold, design: .monospaced)).foregroundStyle(Theme.tSecondary)
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 4) {
                         Circle().fill(Theme.pi).frame(width: 6, height: 6)
-                        Text("Pi").font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.pi)
+                        Text("Pi").font(.system(size: Theme.fontSize(11), weight: .medium)).foregroundStyle(Theme.pi)
                     }
                     Text("\(Fmt.human(d.p_in + d.p_out + d.p_cr + d.p_cw + d.p_reason)) tok")
-                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.tTertiary)
+                        .font(.system(size: Theme.fontSize(11), design: .monospaced)).foregroundStyle(Theme.tTertiary)
                     Text(String(format: "$%.2f", d.pi))
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(Theme.tSecondary)
+                        .font(.system(size: Theme.fontSize(12), weight: .semibold, design: .monospaced)).foregroundStyle(Theme.tSecondary)
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 4) {
                         Circle().fill(Theme.workbuddy).frame(width: 6, height: 6)
-                        Text("WorkBuddy").font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.workbuddy)
+                        Text("WorkBuddy").font(.system(size: Theme.fontSize(11), weight: .medium)).foregroundStyle(Theme.workbuddy)
                     }
                     Text("\(Fmt.human((d.w_in ?? 0) + (d.w_out ?? 0) + (d.w_cr ?? 0) + (d.w_cw ?? 0))) tok")
-                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.tTertiary)
+                        .font(.system(size: Theme.fontSize(11), design: .monospaced)).foregroundStyle(Theme.tTertiary)
                     Text(String(format: "$%.2f", d.workbuddy ?? 0))
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(Theme.tSecondary)
+                        .font(.system(size: Theme.fontSize(12), weight: .semibold, design: .monospaced)).foregroundStyle(Theme.tSecondary)
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 4) {
                         Circle().fill(Theme.qwencode).frame(width: 6, height: 6)
-                        Text("Qwen Code").font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.qwencode)
+                        Text("Qwen Code").font(.system(size: Theme.fontSize(11), weight: .medium)).foregroundStyle(Theme.qwencode)
                     }
                     Text("\(Fmt.human((d.q_in ?? 0) + (d.q_out ?? 0) + (d.q_cr ?? 0) + (d.q_reason ?? 0))) tok")
-                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.tTertiary)
+                        .font(.system(size: Theme.fontSize(11), design: .monospaced)).foregroundStyle(Theme.tTertiary)
                     Text(String(format: "$%.2f", d.qwencode ?? 0))
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(Theme.tSecondary)
+                        .font(.system(size: Theme.fontSize(12), weight: .semibold, design: .monospaced)).foregroundStyle(Theme.tSecondary)
                 }
                 if (d.g_in ?? 0) + (d.g_out ?? 0) + (d.g_cr ?? 0) + (d.g_reason ?? 0) > 0 {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 4) {
                             Circle().fill(Theme.grok).frame(width: 6, height: 6)
-                            Text("Grok Build").font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.grok)
+                            Text("Grok Build").font(.system(size: Theme.fontSize(11), weight: .medium)).foregroundStyle(Theme.grok)
                         }
                         Text("\(Fmt.human((d.g_in ?? 0) + (d.g_out ?? 0) + (d.g_cr ?? 0) + (d.g_reason ?? 0))) tok")
-                            .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.tTertiary)
+                            .font(.system(size: Theme.fontSize(11), design: .monospaced)).foregroundStyle(Theme.tTertiary)
                         Text("成本未提供")
-                            .font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.tTertiary)
+                            .font(.system(size: Theme.fontSize(10), weight: .medium)).foregroundStyle(Theme.tTertiary)
                     }
                 }
             }
@@ -365,7 +365,7 @@ struct DashboardView: View {
             VStack(spacing: 2) {
                 ForEach(0..<7, id: \.self) { r in
                     Text(dayLabels[r])
-                        .font(.system(size: 8, weight: .medium))
+                        .font(.system(size: Theme.fontSize(8), weight: .medium))
                         .foregroundStyle(Theme.tTertiary)
                         .frame(width: 14, height: 20)
                 }
@@ -390,12 +390,12 @@ struct DashboardView: View {
                                     }
                                 }
                             Text(String(ds.suffix(5)))
-                                .font(.system(size: 9, design: .monospaced))
+                                .font(.system(size: Theme.fontSize(9), design: .monospaced))
                                 .foregroundStyle(Theme.tTertiary)
                                 .frame(width: 38, alignment: .leading)
                             if cost > 0 {
                                 Text(String(format: "$%.0f", cost))
-                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .font(.system(size: Theme.fontSize(10), weight: .semibold, design: .monospaced))
                                     .foregroundStyle(Theme.tSecondary)
                             }
                         }
@@ -507,13 +507,13 @@ struct DashboardView: View {
     var heatmapLegend: some View {
         HStack(spacing: 5) {
             Spacer()
-            Text("少").font(.system(size: 10)).foregroundStyle(Theme.tTertiary)
+            Text("少").font(.system(size: Theme.fontSize(10))).foregroundStyle(Theme.tTertiary)
             ForEach(0..<5, id: \.self) { i in
                 RoundedRectangle(cornerRadius: 2.5, style: .continuous)
                     .fill(i == 0 ? Color.primary.opacity(0.04) : Self.heatColors[i])
                     .frame(width: 12, height: 12)
             }
-            Text("多").font(.system(size: 10)).foregroundStyle(Theme.tTertiary)
+            Text("多").font(.system(size: Theme.fontSize(10))).foregroundStyle(Theme.tTertiary)
         }
     }
 

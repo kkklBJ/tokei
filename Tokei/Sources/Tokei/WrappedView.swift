@@ -98,9 +98,9 @@ struct WrappedView: View {
     func hero(_ d: WrappedData) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 5) {
-                Image(systemName: "sparkles").font(.system(size: 11, weight: .bold))
+                Image(systemName: "sparkles").font(.system(size: Theme.fontSize(11), weight: .bold))
                     .foregroundStyle(Theme.claude)
-                Text("回顾").font(.system(size: 11, weight: .bold)).tracking(1.5)
+                Text("回顾").font(.system(size: Theme.fontSize(11), weight: .bold)).tracking(1.5)
                     .foregroundStyle(Theme.tSecondary)
                 Spacer()
                 periodPicker
@@ -108,24 +108,24 @@ struct WrappedView: View {
             HStack(spacing: 4) {
                 if !d.first_day.isEmpty {
                     Text(period == .all ? "自 \(d.first_day)" : d.first_day)
-                        .font(.system(size: 9, design: .monospaced)).foregroundStyle(Theme.tTertiary)
+                        .font(.system(size: Theme.fontSize(9), design: .monospaced)).foregroundStyle(Theme.tTertiary)
                 }
                 if d.active_days > 0 {
                     Text("· \(d.active_days) 天活跃")
-                        .font(.system(size: 9, design: .monospaced)).foregroundStyle(Theme.tTertiary)
+                        .font(.system(size: Theme.fontSize(9), design: .monospaced)).foregroundStyle(Theme.tTertiary)
                 }
             }
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(Fmt.human(d.total_tokens))
-                    .font(.system(size: 32, weight: .heavy, design: .rounded))
+                    .font(.system(size: Theme.fontSize(32), weight: .heavy, design: .rounded))
                     .foregroundStyle(LinearGradient(colors: [Theme.claude, Theme.gemini],
                                                     startPoint: .leading, endPoint: .trailing))
                     .contentTransition(.numericText())
-                Text("tokens").font(.system(size: 10.5)).foregroundStyle(Theme.tTertiary)
+                Text("tokens").font(.system(size: Theme.fontSize(10.5))).foregroundStyle(Theme.tTertiary)
             }
             if d.total_cost > 0 {
                 Text("💡 " + funFactText(d))
-                    .font(.system(size: 9.5))
+                    .font(.system(size: Theme.fontSize(9.5)))
                     .foregroundStyle(.white.opacity(0.7))
             }
         }
@@ -154,12 +154,12 @@ struct WrappedView: View {
 
     func chip(_ label: String, _ value: String, _ tint: Color, icon: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(label).font(.system(size: 9, weight: .medium)).foregroundStyle(tint.opacity(0.9))
+            Text(label).font(.system(size: Theme.fontSize(9), weight: .medium)).foregroundStyle(tint.opacity(0.9))
             HStack(spacing: 3) {
                 if let icon {
-                    Image(systemName: icon).font(.system(size: 10, weight: .bold)).foregroundStyle(tint)
+                    Image(systemName: icon).font(.system(size: Theme.fontSize(10), weight: .bold)).foregroundStyle(tint)
                 }
-                Text(value).font(.system(size: 12.5, weight: .bold, design: .rounded))
+                Text(value).font(.system(size: Theme.fontSize(12.5), weight: .bold, design: .rounded))
                     .foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.6)
             }
         }
@@ -178,9 +178,9 @@ struct WrappedView: View {
         let shown = (achievementsExpanded || !hasMore) ? d.achievements : Array(d.achievements.prefix(limit))
         return VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 5) {
-                Text("成就").font(.system(size: 13, weight: .bold)).foregroundStyle(Theme.tPrimary)
+                Text("成就").font(.system(size: Theme.fontSize(13), weight: .bold)).foregroundStyle(Theme.tPrimary)
                 Text("\(d.achievements.count)")
-                    .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                    .font(.system(size: Theme.fontSize(9.5), weight: .bold, design: .rounded))
                     .foregroundStyle(Theme.claude)
                     .padding(.horizontal, 5).padding(.vertical, 1)
                     .background(Capsule().fill(Theme.claude.opacity(0.14)))
@@ -191,9 +191,9 @@ struct WrappedView: View {
                     } label: {
                         HStack(spacing: 3) {
                             Text(achievementsExpanded ? "收起" : "展开全部")
-                                .font(.system(size: 10, weight: .medium))
+                                .font(.system(size: Theme.fontSize(10), weight: .medium))
                             Image(systemName: achievementsExpanded ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 8, weight: .bold))
+                                .font(.system(size: Theme.fontSize(8), weight: .bold))
                         }
                         .foregroundStyle(Theme.tTertiary)
                         .contentShape(Rectangle())
@@ -218,11 +218,11 @@ struct WrappedView: View {
         let peak = d.hours.firstIndex(of: d.hours.max() ?? 0) ?? -1
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("活跃时段").font(.system(size: 13, weight: .bold))
+                Text("活跃时段").font(.system(size: Theme.fontSize(13), weight: .bold))
                 Spacer()
                 if peak >= 0 {
                     Text(String(format: "高峰 %02d:00", peak))
-                        .font(.system(size: 9.5, design: .monospaced)).foregroundStyle(Theme.tTertiary)
+                        .font(.system(size: Theme.fontSize(9.5), design: .monospaced)).foregroundStyle(Theme.tTertiary)
                 }
             }
             HStack(alignment: .bottom, spacing: 2) {
@@ -239,7 +239,7 @@ struct WrappedView: View {
             .frame(height: 48, alignment: .bottom)
             HStack(spacing: 0) {
                 ForEach([0, 6, 12, 18, 23], id: \.self) { h in
-                    Text("\(h)").font(.system(size: 8, design: .monospaced))
+                    Text("\(h)").font(.system(size: Theme.fontSize(8), design: .monospaced))
                         .foregroundStyle(Theme.tTertiary)
                     if h != 23 { Spacer() }
                 }
@@ -258,7 +258,7 @@ struct WrappedView: View {
                     onPeriodChange(p)
                 } label: {
                     Text(p.label)
-                        .font(.system(size: 9, weight: p == period ? .bold : .medium))
+                        .font(.system(size: Theme.fontSize(9), weight: p == period ? .bold : .medium))
                         .foregroundStyle(p == period ? .white : Theme.tTertiary)
                         .padding(.horizontal, 7).padding(.vertical, 3)
                         .background(
@@ -304,7 +304,7 @@ struct BadgeView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: a.icon).font(.system(size: 12, weight: .bold))
+            Image(systemName: a.icon).font(.system(size: Theme.fontSize(12), weight: .bold))
                 .foregroundStyle(.white)
                 .frame(width: 26, height: 26)
                 .background(
@@ -314,8 +314,8 @@ struct BadgeView: View {
                 .overlay(Circle().strokeBorder(Color.white.opacity(0.22), lineWidth: 0.5))
                 .shadow(color: Theme.claude.opacity(0.4), radius: 3, y: 1)
             VStack(alignment: .leading, spacing: 1) {
-                Text(a.title).font(.system(size: 11.5, weight: .bold)).foregroundStyle(Theme.tPrimary)
-                Text(a.desc).font(.system(size: 9)).foregroundStyle(Theme.tTertiary).lineLimit(1)
+                Text(a.title).font(.system(size: Theme.fontSize(11.5), weight: .bold)).foregroundStyle(Theme.tPrimary)
+                Text(a.desc).font(.system(size: Theme.fontSize(9))).foregroundStyle(Theme.tTertiary).lineLimit(1)
             }
             Spacer(minLength: 0)
         }
