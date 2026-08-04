@@ -31,6 +31,13 @@ struct PopoverPlacementCheck {
             ) == PanelPlacement.minimumHeight,
             "small screens should retain a usable minimum panel height"
         )
+        try expect(
+            PanelPlacement.contentSize(
+                anchorVisibleFrame: external,
+                fallbackVisibleFrame: focused
+            ) == CGSize(width: 640, height: 840),
+            "the popover frame should remain fixed while switching pages"
+        )
 
         print("popover placement checks passed")
     }

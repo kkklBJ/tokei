@@ -6,7 +6,6 @@ struct PanelView: View {
     @ObservedObject var store: Store
     @ObservedObject var layout: PanelLayoutContext = PanelLayoutContext()
     var scrollable = true
-    var onContentSizeChange: ((CGSize) -> Void)?
     @State private var sel: RangeKey = .today
     @State private var claudeModelsOpen = false
     @State private var codexModelsOpen = false
@@ -67,7 +66,7 @@ struct PanelView: View {
     private var settingsMenuPickerWidth: CGFloat { settingsColumnWidth - 40 }
 
     private var maxPanelHeight: CGFloat {
-        layout.maximumHeight
+        layout.contentSize.height
     }
 
     private var projectPanelHeight: CGFloat {
@@ -112,14 +111,13 @@ struct PanelView: View {
                     .environment(\.colorScheme, .dark)
             }
         }
+        .frame(
+            width: scrollable ? layout.contentSize.width : nil,
+            height: scrollable ? layout.contentSize.height : nil,
+            alignment: .top
+        )
         .background {
-            GeometryReader { proxy in
-                Color.clear.preference(key: PanelContentSizeKey.self, value: proxy.size)
-            }
-        }
-        .onPreferenceChange(PanelContentSizeKey.self) { size in
-            guard size.width > 0, size.height > 0 else { return }
-            onContentSizeChange?(size)
+            if scrollable { Theme.bg }
         }
     }
 
@@ -2915,14 +2913,6 @@ struct PanelView: View {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(Color.primary.opacity(0.04))
         )
-    }
-}
-
-private struct PanelContentSizeKey: PreferenceKey {
-    static var defaultValue: CGSize = .zero
-
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
-        value = nextValue()
     }
 }
 

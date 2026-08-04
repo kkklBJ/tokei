@@ -210,8 +210,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var timer: Timer?
     var globalMouseMonitor: Any?
     weak var popoverAnchorButton: NSStatusBarButton?
-    private var pendingPopoverReanchor: DispatchWorkItem?
-    private var lastPanelContentSize = CGSize.zero
 
     // 菜单栏额度颜色(与面板 Theme.claude/codex/grok 一致)。
     static let claudeColor = NSColor(red: 0.92, green: 0.52, blue: 0.40, alpha: 1)
@@ -229,13 +227,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let host = NSHostingController(rootView: PanelView(
             store: store,
-            layout: panelLayout,
-            onContentSizeChange: { [weak self] size in
-                self?.panelContentSizeDidChange(size)
-            }
+            layout: panelLayout
         ))
-        host.sizingOptions = .preferredContentSize
+        // 页面切换只改变固定画布内部内容，禁止 preferredContentSize 驱动
+        // NSPopover 在全屏 Space 中重新选择屏幕和锚点。
+        host.sizingOptions = []
         popover.contentViewController = host
+        popover.contentSize = panelLayout.contentSize
         popover.behavior = .applicationDefined
         // SwiftUI 页面切换本身已有动画。禁用 NSPopover 的尺寸动画，避免 AppKit
         // 在外接显示器的全屏 Space 中按错误屏幕重新计算锚点。
@@ -451,6 +449,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             store.refresh()
             updatePanelLayout(for: b)
+            popover.contentSize = panelLayout.contentSize
             popover.show(relativeTo: b.bounds, of: b, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
         }
@@ -463,26 +462,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    private func panelContentSizeDidChange(_ size: CGSize) {
-        guard abs(size.width - lastPanelContentSize.width) > 0.5
-                || abs(size.height - lastPanelContentSize.height) > 0.5 else { return }
-        lastPanelContentSize = size
-        guard popover.isShown else { return }
-
-        pendingPopoverReanchor?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.reanchorPopover()
-        }
-        pendingPopoverReanchor = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06, execute: workItem)
-    }
-
-    private func reanchorPopover() {
-        guard popover.isShown,
-              let button = popoverAnchorButton ?? statusItem.button else { return }
-        updatePanelLayout(for: button)
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-    }
 }
 
 // 离屏截图模式:Tokei --shot /path/out.png
