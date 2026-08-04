@@ -197,6 +197,7 @@ final class Store: ObservableObject {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = Store()
+    let panelLayout = PanelLayoutContext()
     var statusItem: NSStatusItem!
     var popover = NSPopover()
     lazy var statusMenu: NSMenu = {
@@ -208,6 +209,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }()
     var timer: Timer?
     var globalMouseMonitor: Any?
+    weak var popoverAnchorButton: NSStatusBarButton?
+    private var pendingPopoverReanchor: DispatchWorkItem?
+    private var lastPanelContentSize = CGSize.zero
 
     // 菜单栏额度颜色(与面板 Theme.claude/codex/grok 一致)。
     static let claudeColor = NSColor(red: 0.92, green: 0.52, blue: 0.40, alpha: 1)
@@ -223,11 +227,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         updateStatusTitle()
 
-        let host = NSHostingController(rootView: PanelView(store: store))
+        let host = NSHostingController(rootView: PanelView(
+            store: store,
+            layout: panelLayout,
+            onContentSizeChange: { [weak self] size in
+                self?.panelContentSizeDidChange(size)
+            }
+        ))
         host.sizingOptions = .preferredContentSize
         popover.contentViewController = host
         popover.behavior = .applicationDefined
-        popover.animates = true
+        // SwiftUI 页面切换本身已有动画。禁用 NSPopover 的尺寸动画，避免 AppKit
+        // 在外接显示器的全屏 Space 中按错误屏幕重新计算锚点。
+        popover.animates = false
 
         // 启动时先把 Qoder IDE / Grok 实时额度开关落盘到 config.json,
         // 确保随后的 refresh() 触发的 Python 扫描能读到正确配置。
@@ -419,7 +431,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSMenu.popUpContextMenu(statusMenu, with: event, for: sender)
             return
         }
-        togglePopover()
+        popoverAnchorButton = sender
+        togglePopover(anchorButton: sender)
     }
 
     @objc func quitApp() {
@@ -428,13 +441,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func togglePopover() {
         guard let b = statusItem.button else { return }
+        popoverAnchorButton = b
+        togglePopover(anchorButton: b)
+    }
+
+    private func togglePopover(anchorButton b: NSStatusBarButton) {
         if popover.isShown {
             popover.performClose(nil)
         } else {
             store.refresh()
+            updatePanelLayout(for: b)
             popover.show(relativeTo: b.bounds, of: b, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
         }
+    }
+
+    private func updatePanelLayout(for button: NSStatusBarButton) {
+        panelLayout.update(
+            anchorVisibleFrame: button.window?.screen?.visibleFrame,
+            fallbackVisibleFrame: NSScreen.screens.first?.visibleFrame
+        )
+    }
+
+    private func panelContentSizeDidChange(_ size: CGSize) {
+        guard abs(size.width - lastPanelContentSize.width) > 0.5
+                || abs(size.height - lastPanelContentSize.height) > 0.5 else { return }
+        lastPanelContentSize = size
+        guard popover.isShown else { return }
+
+        pendingPopoverReanchor?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.reanchorPopover()
+        }
+        pendingPopoverReanchor = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06, execute: workItem)
+    }
+
+    private func reanchorPopover() {
+        guard popover.isShown,
+              let button = popoverAnchorButton ?? statusItem.button else { return }
+        updatePanelLayout(for: button)
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 }
 

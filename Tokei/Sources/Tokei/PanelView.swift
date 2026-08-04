@@ -4,7 +4,9 @@ import TokeiUpdateSecurity
 
 struct PanelView: View {
     @ObservedObject var store: Store
+    @ObservedObject var layout: PanelLayoutContext = PanelLayoutContext()
     var scrollable = true
+    var onContentSizeChange: ((CGSize) -> Void)?
     @State private var sel: RangeKey = .today
     @State private var claudeModelsOpen = false
     @State private var codexModelsOpen = false
@@ -65,7 +67,7 @@ struct PanelView: View {
     private var settingsMenuPickerWidth: CGFloat { settingsColumnWidth - 40 }
 
     private var maxPanelHeight: CGFloat {
-        (NSScreen.main?.visibleFrame.height ?? 900) - 40
+        layout.maximumHeight
     }
 
     private var projectPanelHeight: CGFloat {
@@ -86,27 +88,38 @@ struct PanelView: View {
         let w = (mode == .settings || mode == .quotaHistory)
             ? settingsPanelWidth
             : (mode == .cards ? panelWidth : max(panelWidth, 420))
-        if scrollable {
-            if mode == .projects {
-                projectPanelContent
-                    .frame(width: w, height: projectPanelHeight)
-                    .background(Theme.bg)
-                    .background(VisualEffect())
-                    .environment(\.colorScheme, .dark)
+        Group {
+            if scrollable {
+                if mode == .projects {
+                    projectPanelContent
+                        .frame(width: w, height: projectPanelHeight)
+                        .background(Theme.bg)
+                        .background(VisualEffect())
+                        .environment(\.colorScheme, .dark)
+                } else {
+                    ScrollView(.vertical, showsIndicators: false) { panelContent }
+                        .frame(width: w)
+                        .frame(maxHeight: maxPanelHeight)
+                        .background(Theme.bg)
+                        .background(VisualEffect())
+                        .environment(\.colorScheme, .dark)
+                }
             } else {
-                ScrollView(.vertical, showsIndicators: false) { panelContent }
-                    .frame(width: w)
-                    .frame(maxHeight: maxPanelHeight)
+                panelContent
+                    .frame(width: w, alignment: .top)
                     .background(Theme.bg)
                     .background(VisualEffect())
                     .environment(\.colorScheme, .dark)
             }
-        } else {
-            panelContent
-                .frame(width: w, alignment: .top)
-                .background(Theme.bg)
-                .background(VisualEffect())
-                .environment(\.colorScheme, .dark)
+        }
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(key: PanelContentSizeKey.self, value: proxy.size)
+            }
+        }
+        .onPreferenceChange(PanelContentSizeKey.self) { size in
+            guard size.width > 0, size.height > 0 else { return }
+            onContentSizeChange?(size)
         }
     }
 
@@ -2902,6 +2915,14 @@ struct PanelView: View {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(Color.primary.opacity(0.04))
         )
+    }
+}
+
+private struct PanelContentSizeKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
     }
 }
 
