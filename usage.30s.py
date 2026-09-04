@@ -22,8 +22,13 @@ import hashlib
 import json
 import math
 import re
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from pathlib import Path
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover - Python 3.8 fallback for older installs
+    ZoneInfo = None
 
 HOME = os.path.expanduser("~")
 APPDATA = os.environ.get("APPDATA") or os.path.join(HOME, "AppData", "Roaming")
@@ -166,6 +171,41 @@ _DEFAULT_PRICES = {
     "tencent/hy3-preview":           {"in": 0.063, "out": 0.21, "cache_read": 0.021,  "cache_write": 0.0},
 }
 
+# DeepSeek 官方 API 的价格按北京时间潮汐变化；当前统一成本口径为美元 / 1M
+# tokens（与 pricing.json/OpenRouter 的单位一致）。OpenRouter canonical ID
+# 仍使用 pricing.json 中的静态 provider 价格，只有明确识别为官方 DeepSeek
+# API 的请求才使用本表。
+try:
+    _DEEPSEEK_TIMEZONE = ZoneInfo("Asia/Shanghai") if ZoneInfo is not None else None
+except Exception:  # pragma: no cover - timezone database may be absent on Windows
+    _DEEPSEEK_TIMEZONE = None
+if _DEEPSEEK_TIMEZONE is None:
+    _DEEPSEEK_TIMEZONE = timezone(timedelta(hours=8))
+_DEEPSEEK_PEAK_WINDOWS = ((9 * 60, 12 * 60), (14 * 60, 18 * 60))
+# DeepSeek 官方涨价从 2026-08-17 00:00（北京时间）开始执行；切点时刻
+# 本身已经使用新价，之前的请求继续使用涨价前的固定价格。
+_DEEPSEEK_PRICE_CHANGE_AT = datetime(
+    2026, 8, 17, 0, 0, tzinfo=_DEEPSEEK_TIMEZONE
+)
+_DEEPSEEK_PREVIOUS_PRICES = {
+    "deepseek/deepseek-v4-flash": {
+        "in": 0.14, "out": 0.28, "cache_read": 0.0028, "cache_write": 0.0,
+    },
+    "deepseek/deepseek-v4-pro": {
+        "in": 0.435, "out": 0.87, "cache_read": 0.003625, "cache_write": 0.0,
+    },
+}
+_DEEPSEEK_OFFICIAL_PRICES = {
+    "deepseek/deepseek-v4-flash": {
+        "off_peak": {"in": 0.22, "out": 0.66, "cache_read": 0.007, "cache_write": 0.0},
+        "peak": {"in": 0.44, "out": 1.32, "cache_read": 0.014, "cache_write": 0.0},
+    },
+    "deepseek/deepseek-v4-pro": {
+        "off_peak": {"in": 0.66, "out": 1.98, "cache_read": 0.022, "cache_write": 0.0},
+        "peak": {"in": 1.32, "out": 3.96, "cache_read": 0.044, "cache_write": 0.0},
+    },
+}
+
 
 def _load_json(path, default):
     try:
@@ -227,6 +267,69 @@ def _normalize(model: str):
     return m
 
 
+def _deepseek_model_key(model: str):
+    """Map V4 aliases/versions to the official pricing profile key."""
+    raw = re.sub(r"\[[^\]]+\]$", "", str(model or "").strip())
+    normalized = _normalize(raw) or ""
+    if normalized.startswith("deepseek/deepseek-v4-flash"):
+        return "deepseek/deepseek-v4-flash"
+    if normalized.startswith("deepseek/deepseek-v4-pro"):
+        return "deepseek/deepseek-v4-pro"
+    return None
+
+
+def _is_official_deepseek(model: str, provider=None, base_url=None):
+    """Whether a record identifies the official DeepSeek API rather than OpenRouter."""
+    key = _deepseek_model_key(model)
+    if key is None:
+        return False
+
+    provider_text = str(provider or "").strip().lower()
+    base_url_text = str(base_url or "").strip().lower()
+    context = f"{provider_text} {base_url_text}"
+    if "openrouter" in context or "openrouter.ai" in context:
+        return False
+    if "api.deepseek.com" in base_url_text:
+        return True
+    if "deepseek" in provider_text:
+        return True
+
+    # Official API model IDs are bare (deepseek-v4-flash/pro); OpenRouter's
+    # canonical IDs contain the provider prefix deepseek/.
+    raw = str(model or "").strip().lower()
+    return "/" not in raw and not raw.startswith("~")
+
+
+def _deepseek_pricing_period(at):
+    """Return peak/off_peak for an aware request timestamp in Beijing time."""
+    if not isinstance(at, datetime) or at.tzinfo is None:
+        return None
+    local = at.astimezone(_DEEPSEEK_TIMEZONE)
+    minute = local.hour * 60 + local.minute
+    return "peak" if any(start <= minute < end for start, end in _DEEPSEEK_PEAK_WINDOWS) else "off_peak"
+
+
+def _time_price(model: str, at=None, provider=None, base_url=None):
+    if not _is_official_deepseek(model, provider, base_url):
+        return None
+    key = _deepseek_model_key(model)
+    if key is None:
+        return None
+    # 没有时间戳时不猜测当前潮汐时段，也不把新价格错误应用到历史记录；
+    # 使用涨价前固定价作为兼容/保守基准。
+    if at is None:
+        return dict(_DEEPSEEK_PREVIOUS_PRICES[key])
+    if not isinstance(at, datetime) or at.tzinfo is None:
+        return None
+    effective_at = at.astimezone(_DEEPSEEK_TIMEZONE)
+    if effective_at < _DEEPSEEK_PRICE_CHANGE_AT:
+        return dict(_DEEPSEEK_PREVIOUS_PRICES[key])
+    period = _deepseek_pricing_period(effective_at)
+    if period is None:
+        return None
+    return dict(_DEEPSEEK_OFFICIAL_PRICES[key][period])
+
+
 def _resolve_id(model: str):
     """解析到 canonical id;未知按 opus 兜底(偏保守)。<synthetic> 返回 None。"""
     s = (model or "").strip()
@@ -281,11 +384,14 @@ def _pricing_id(model: str):
     return None
 
 
-def _raw_price(model: str):
-    """统一查价 → {in,out,cache_read,cache_write,write1h?}。<synthetic>→全 0。"""
+def _raw_price(model: str, at=None, provider=None, base_url=None):
+    """统一查价；官方 DeepSeek 可按请求时间选择潮汐价。"""
     cid = _resolve_id(model)
     if cid is None:
         return {"in": 0.0, "out": 0.0, "cache_read": 0.0, "cache_write": 0.0}
+    dynamic = _time_price(model, at=at, provider=provider, base_url=base_url)
+    if dynamic is not None:
+        return dynamic
     p = dict(_DEFAULT_PRICES.get(cid, {}))            # 内置兜底打底
     p.update(_PRICING_DB.get(cid, {}))                # OpenRouter 基准
     p.update(_OV_MODELS.get(cid, {}))                 # 本地覆盖优先
@@ -298,16 +404,27 @@ def _raw_price(model: str):
     return out
 
 
-def price_for(model: str):
+def price_for(model: str, at=None, provider=None, base_url=None):
     """Claude 成本用:补 write5m/write1h 两档(write5m = OpenRouter cache_write)。"""
-    p = _raw_price(model)
+    p = _raw_price(model, at=at, provider=provider, base_url=base_url)
     return {"in": p["in"], "out": p["out"], "cache_read": p["cache_read"],
             "write5m": p["cache_write"], "write1h": p.get("write1h", p["cache_write"])}
 
 
-def gemini_price(model: str):
+def gemini_price(model: str, at=None, provider=None, base_url=None):
     """Gemini 成本用:in/out/cache_read 取统一查价(OpenRouter 已分版本,比正则更准)。"""
-    return _raw_price(model)
+    return _raw_price(model, at=at, provider=provider, base_url=base_url)
+
+
+def _token_cost(price, input_tokens=0, output_tokens=0, cache_read=0,
+                cache_write=0, reasoning=0):
+    """Calculate USD cost from already-separated token buckets."""
+    return (
+        max(float(input_tokens or 0), 0) * price["in"]
+        + max(float(output_tokens or 0) + float(reasoning or 0), 0) * price["out"]
+        + max(float(cache_read or 0), 0) * price["cache_read"]
+        + max(float(cache_write or 0), 0) * price["cache_write"]
+    ) / 1e6
 
 
 RANGE_KEYS = ["today", "yesterday", "week", "last_week", "month", "year", "all"]
@@ -424,7 +541,7 @@ def human(n: float) -> str:
 # ---------- 增量扫描缓存 ----------
 import tempfile as _tempfile
 _SCAN_CACHE_FILE = os.path.join(_tempfile.gettempdir(), "_tokei_scan_cache.json")
-_SCAN_CACHE_VERSION = 20
+_SCAN_CACHE_VERSION = 22
 _SCAN_CACHE_MIGRATABLE_VERSION = 19
 _CODEX_EVENT_CACHE_SUFFIX = ".codex-events"
 _GEMINI_DAYS_CACHE_KEY = "_gemini_dashboard_days"
@@ -917,7 +1034,9 @@ def _claude_usage(line, want_dt=False):
     out = u.get("output_tokens", 0) or 0
     cr = u.get("cache_read_input_tokens", 0) or 0
     cw = u.get("cache_creation_input_tokens", 0) or 0
-    p = price_for(msg.get("model"))
+    provider = msg.get("provider") or o.get("provider")
+    base_url = msg.get("base_url") or msg.get("baseUrl") or o.get("base_url") or o.get("baseUrl")
+    p = price_for(msg.get("model"), at=dt, provider=provider, base_url=base_url)
     cc = u.get("cache_creation") or {}
     w5 = cc.get("ephemeral_5m_input_tokens")
     w1 = cc.get("ephemeral_1h_input_tokens")
@@ -1969,7 +2088,8 @@ def scan_codex(bounds, cache):
                         # 计费仍按 gpt-5.5 保守估算(下行 price_model 兜底)
                         model = _known_id_or_raw(file_model) or "unknown"
                         price_model = model if _has_known_price(model) else "openai/gpt-5.5"
-                        cx_base = _raw_price(price_model)
+                        raw_price_model = file_model if _has_known_price(file_model) else price_model
+                        cx_base = _raw_price(raw_price_model, at=ts)
                         hi = li > 272_000
                         p_in = cx_base["in"] * (2 if hi else 1)
                         p_out = cx_base["out"] * (1.5 if hi else 1)
@@ -2327,7 +2447,7 @@ def scan_gemini(bounds, cache):
             out = int(tokens.get("output", 0) or 0)
             cached = int(tokens.get("cached", 0) or 0)
             thoughts = int(tokens.get("thoughts", 0) or 0)
-            price = gemini_price(model)
+            price = gemini_price(model, at=dt)
             cost = (max(inp - cached, 0) / 1e6 * price["in"]
                     + cached / 1e6 * price["cache_read"]
                     + (out + thoughts) / 1e6 * price["out"])
@@ -3389,9 +3509,27 @@ def _scan_hermes_db(db_path, _sq):
                 "last_seen": session.get("started_at"),
             })
 
-        def row_cost(row):
+        def row_cost(row, at=None):
             actual = row.get("actual_cost_usd")
-            return float(actual if actual is not None else row.get("estimated_cost_usd", 0) or 0)
+            if actual is not None:
+                return float(actual)
+            if at is not None and _is_official_deepseek(
+                    row.get("model"), row.get("billing_provider"), row.get("billing_base_url")):
+                price = _raw_price(
+                    row.get("model"),
+                    at=at,
+                    provider=row.get("billing_provider"),
+                    base_url=row.get("billing_base_url"),
+                )
+                return _token_cost(
+                    price,
+                    row.get("input_tokens", 0),
+                    row.get("output_tokens", 0),
+                    row.get("cache_read_tokens", 0),
+                    row.get("cache_write_tokens", 0),
+                    row.get("reasoning_tokens", 0),
+                )
+            return float(row.get("estimated_cost_usd", 0) or 0)
 
         records_by_session = {}
         for row in records:
@@ -3434,7 +3572,13 @@ def _scan_hermes_db(db_path, _sq):
         day_sessions = {}
         for row in records:
             session_id = row.get("session_id")
-            timestamp = session_first_seen.get(session_id)
+            timestamp = row.get("first_seen") or row.get("last_seen") or session_first_seen.get(session_id)
+            try:
+                timestamp = float(timestamp)
+                if timestamp > 100_000_000_000:
+                    timestamp /= 1000.0
+            except (TypeError, ValueError):
+                timestamp = None
             if timestamp is None:
                 continue
             local_dt = datetime.fromtimestamp(timestamp).astimezone()
@@ -3447,7 +3591,7 @@ def _scan_hermes_db(db_path, _sq):
             cr = int(row.get("cache_read_tokens") or 0)
             cw = int(row.get("cache_write_tokens") or 0)
             reason = int(row.get("reasoning_tokens") or 0)
-            _add_token_usage(day, inp, out, cr, cw, reason, row_cost(row), row.get("model"))
+            _add_token_usage(day, inp, out, cr, cw, reason, row_cost(row, local_dt), row.get("model"))
             day["hours"][local_dt.hour] += inp + out + cr + cw + reason
             if session_id in sessions:
                 day_sessions.setdefault(dk, set()).add(session_id)
@@ -3841,8 +3985,18 @@ def scan_openclaw(bounds, cache):
                             if raw_cost > 0:
                                 cost = raw_cost
                             elif cid:
-                                p = _raw_price(model)
-                                cost = inp / 1e6 * p["in"] + out / 1e6 * p["out"] + cr / 1e6 * p["cache_read"] + cw / 1e6 * p["cache_write"]
+                                provider_data = msg.get("providerData") or o.get("providerData") or {}
+                                if not isinstance(provider_data, dict):
+                                    provider_data = {}
+                                provider = (provider_data.get("provider")
+                                            or provider_data.get("providerName")
+                                            or msg.get("provider") or o.get("provider"))
+                                base_url = (provider_data.get("baseUrl")
+                                            or provider_data.get("base_url")
+                                            or msg.get("baseUrl") or msg.get("base_url")
+                                            or o.get("baseUrl") or o.get("base_url"))
+                                p = _raw_price(model, at=dt, provider=provider, base_url=base_url)
+                                cost = _token_cost(p, inp, out, cr, cw)
                             else:
                                 cost = 0.0
                             dk = dt.date().isoformat()
@@ -3930,7 +4084,7 @@ def _pi_usage_int(usage, *fields):
     return 0
 
 
-def _pi_usage_cost(u, model):
+def _pi_usage_cost(u, model, at=None, provider=None, base_url=None):
     cost_obj = u.get("cost") or {}
     total = float(cost_obj.get("total", 0) or 0)
     if total > 0:
@@ -3938,12 +4092,12 @@ def _pi_usage_cost(u, model):
     parts = sum(float(cost_obj.get(k, 0) or 0) for k in ("input", "output", "cacheRead", "cacheWrite"))
     if parts > 0:
         return parts
-    p = _raw_price(model)
+    p = _raw_price(model, at=at, provider=provider, base_url=base_url)
     inp = _pi_usage_int(u, "input")
     out = _pi_usage_int(u, "output")
     cr = _pi_usage_int(u, "cacheRead", "cache_read")
     cw = _pi_usage_int(u, "cacheWrite", "cache_write")
-    return inp / 1e6 * p["in"] + out / 1e6 * p["out"] + cr / 1e6 * p["cache_read"] + cw / 1e6 * p["cache_write"]
+    return _token_cost(p, inp, out, cr, cw)
 
 
 def scan_pi(bounds, cache):
@@ -4005,7 +4159,13 @@ def scan_pi(bounds, cache):
                         cw = _pi_usage_int(u, "cacheWrite", "cache_write")
                         reason = _pi_usage_int(u, "reasoning", "reason", "reasoningTokens")
                         model = _pi_model_id(msg)
-                        cost = _pi_usage_cost(u, model)
+                        cost = _pi_usage_cost(
+                            u,
+                            model,
+                            at=dt,
+                            provider=msg.get("provider"),
+                            base_url=(msg.get("baseUrl") or msg.get("base_url")),
+                        )
                         if inp + out + cr + cw + reason == 0 and cost <= 0:
                             continue
                         dk = dt.astimezone().date().isoformat()
@@ -4139,10 +4299,13 @@ def _workbuddy_usage_record(item):
 
     model = (provider.get("requestModelName") or provider.get("requestModelId")
              or provider.get("model") or message.get("model") or item.get("model") or "unknown")
-    price = _raw_price(str(model))
-    cost = (input_tokens / 1e6 * price["in"] + output / 1e6 * price["out"]
-            + cache_read / 1e6 * price["cache_read"]
-            + cache_write / 1e6 * price["cache_write"])
+    provider_name = (provider.get("provider") or provider.get("providerName")
+                     or message.get("provider") or item.get("provider"))
+    base_url = (provider.get("baseUrl") or provider.get("base_url")
+                or message.get("baseUrl") or message.get("base_url")
+                or item.get("baseUrl") or item.get("base_url"))
+    price = _raw_price(str(model), at=dt, provider=provider_name, base_url=base_url)
+    cost = _token_cost(price, input_tokens, output, cache_read, cache_write)
     item_id = item.get("id") or provider.get("messageId") or ""
     return {
         "date": dt.date().isoformat(),
@@ -4253,7 +4416,7 @@ def scan_workbuddy(bounds, cache):
 # SQLite: ~/.local/share/opencode/opencode.db；旧版 JSON 作为补充来源。
 # JSON 文件: ~/.local/share/opencode/storage/message/<session>/msg_*.json
 # 每条 assistant 消息有 tokens{input,output,reasoning,cache{read,write}} + cost + modelID。
-_OPENCODE_COST_CACHE_VERSION = 1
+_OPENCODE_COST_CACHE_VERSION = 3
 
 
 def _opencode_db_paths():
@@ -4296,11 +4459,18 @@ def _opencode_message_day(message, session_id="", created_ms=0, estimate_missing
     if estimate_missing_cost and not cost:
         price_id = _pricing_id(model)
         if price_id:
-            price = _raw_price(price_id)
-            cost = ((int(tokens.get("input", 0) or 0) / 1e6) * price["in"]
-                    + ((int(tokens.get("output", 0) or 0) + int(tokens.get("reasoning", 0) or 0)) / 1e6) * price["out"]
-                    + (int(cache.get("read", 0) or 0) / 1e6) * price["cache_read"]
-                    + (int(cache.get("write", 0) or 0) / 1e6) * price["cache_write"])
+            provider = (message.get("provider") or message.get("providerID")
+                        or message.get("providerId"))
+            base_url = (message.get("baseUrl") or message.get("base_url"))
+            price = _raw_price(model, at=created, provider=provider, base_url=base_url)
+            cost = _token_cost(
+                price,
+                int(tokens.get("input", 0) or 0),
+                int(tokens.get("output", 0) or 0),
+                int(cache.get("read", 0) or 0),
+                int(cache.get("write", 0) or 0),
+                int(tokens.get("reasoning", 0) or 0),
+            )
     day = {
         "date": created.strftime("%Y-%m-%d"),
         "in": int(tokens.get("input", 0) or 0),
@@ -4504,11 +4674,8 @@ def _scan_zcode_database(path):
             price_id = _pricing_id(model)
             cost = 0.0
             if price_id:
-                price = _raw_price(price_id)
-                cost = (fresh_input / 1e6 * price["in"]
-                        + output_total / 1e6 * price["out"]
-                        + cache_read / 1e6 * price["cache_read"]
-                        + cache_write / 1e6 * price["cache_write"])
+                price = _raw_price(model, at=created)
+                cost = _token_cost(price, fresh_input, output_total, cache_read, cache_write)
             day_key = created.date().isoformat()
             day = days.setdefault(day_key, _empty_token_day())
             _add_token_usage(day, fresh_input, visible_output, cache_read, cache_write,
@@ -4671,7 +4838,7 @@ def _qwen_datetime(value):
     return None
 
 
-def _qwen_usage_parts(model, values):
+def _qwen_usage_parts(model, values, at=None, provider=None, base_url=None):
     values = values if isinstance(values, dict) else {}
     input_total = _qwen_number(values.get("inputTokens"))
     cached = _qwen_number(values.get("cachedTokens"))
@@ -4681,9 +4848,8 @@ def _qwen_usage_parts(model, values):
     inp = max(input_total - cached, 0)
     out = _qwen_number(values.get("outputTokens"))
     reason = _qwen_number(values.get("thoughtsTokens"))
-    price = _raw_price(model)
-    cost = ((inp * price["in"] + cached * price["cache_read"]
-             + (out + reason) * price["out"]) / 1e6)
+    price = _raw_price(model, at=at, provider=provider, base_url=base_url)
+    cost = _token_cost(price, inp, out, cached, reasoning=reason)
     return inp, out, cached, reason, cost
 
 
@@ -4706,7 +4872,13 @@ def _qwen_request_entry(record):
     if not day_str:
         return None
 
-    inp, out, cached, reason, cost = _qwen_usage_parts(model, record)
+    inp, out, cached, reason, cost = _qwen_usage_parts(
+        model,
+        record,
+        at=dt,
+        provider=record.get("provider"),
+        base_url=(record.get("baseUrl") or record.get("base_url")),
+    )
     models = {}
     _add_model_usage(models, model, inp, out, cached, 0, reason, cost)
     return {
@@ -4736,7 +4908,11 @@ def _qwen_summary_entry(record):
     total_in = total_out = total_cr = total_reason = 0
     total_cost = 0.0
     for model, values in models_raw.items():
-        inp, out, cached, reason, cost = _qwen_usage_parts(str(model), values)
+        inp, out, cached, reason, cost = _qwen_usage_parts(
+            str(model),
+            values,
+            at=dt,
+        )
         _add_model_usage(models, str(model), inp, out, cached, 0, reason, cost)
         total_in += inp
         total_out += out
@@ -5384,6 +5560,15 @@ def _recalc_costs(result):
                 name = m.get("name", "")
                 price_id = _pricing_id(name)
                 authoritative_cost = float(m.get("cost", 0) or 0)
+                # DeepSeek 官方潮汐价已在请求级别计算；聚合后的 model 行没有
+                # 单条 timestamp，不能再次用一个静态单价覆盖历史成本。
+                if _deepseek_model_key(name) and authoritative_cost:
+                    total_cost += authoritative_cost
+                    if price_id:
+                        price = _raw_price(price_id)
+                        m["pin"] = price["in"]
+                        m["pout"] = price["out"]
+                    continue
                 if tool_key == "hermes" and authoritative_cost:
                     total_cost += authoritative_cost
                     if price_id:

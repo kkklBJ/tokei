@@ -49,6 +49,7 @@ Tokei 是一款 **macOS 菜单栏应用**，实时追踪你在 **12 款 AI 编�
 ### 成本估算
 - 基于 API 实际定价估算成本（非订阅费用）
 - 317 个模型价格表（来源 OpenRouter），支持一键更新
+- DeepSeek V4 官方 API 按请求时间使用北京时间潮汐价格；OpenRouter 模型仍按价格表计算
 - 本地价格覆盖（`pricing_overrides.json`），更新不丢失
 - 未知模型按家族关键词回退，兜底用 Opus 价格（保守上限）
 
