@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# TOKEI_COLLECTOR_REVISION=1
 # <bitbar.title>AI Usage Bar</bitbar.title>
 # <bitbar.version>v0.1</bitbar.version>
 # <bitbar.author>local</bitbar.author>
