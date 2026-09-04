@@ -48,6 +48,7 @@ class CodexResetCardsTests(unittest.TestCase):
         self.patchers = [
             mock.patch.object(USAGE, "CODEX_AUTH", str(self.auth_path)),
             mock.patch.object(USAGE, "CODEX_RESET_CARDS_CACHE", str(self.cache_path)),
+            mock.patch.object(USAGE, "_codex_is_custom_provider", return_value=False),
         ]
         for patcher in self.patchers:
             patcher.start()
@@ -109,7 +110,7 @@ class CodexResetCardsTests(unittest.TestCase):
         self.assertNotIn("private-id", self.cache_path.read_text())
         self.assertNotIn("private-user", self.cache_path.read_text())
 
-    def test_empty_result_is_cached_for_one_day(self):
+    def test_empty_result_uses_success_refresh_interval(self):
         now = 1_785_000_000
         payload = {"credits": [], "available_count": 0}
         opener = mock.Mock(return_value=_Response(payload))
@@ -125,6 +126,33 @@ class CodexResetCardsTests(unittest.TestCase):
             state["next_attempt_at"],
             now + USAGE._CODEX_RESET_CARDS_REFRESH_INTERVAL,
         )
+
+    def test_legacy_daily_deadline_is_clamped_after_upgrade(self):
+        now = 1_785_000_000
+        context = USAGE._codex_auth_context(json.loads(self.auth_path.read_text()))
+        cards = USAGE._normalize_codex_reset_cards(self.payload(), now)
+        self.cache_path.write_text(json.dumps({
+            "account_key": context["account_key"],
+            "auth_key": context["auth_key"],
+            "fetched_at": now,
+            "cards": cards,
+            "next_attempt_at": now + 24 * 3600,
+        }))
+        payload = self.payload()
+        payload["credits"].append({
+            "status": "available",
+            "is_supported_by_plan": True,
+            "expires_at": "2026-08-03T00:00:00Z",
+        })
+        opener = mock.Mock(return_value=_Response(payload))
+
+        with mock.patch("urllib.request.urlopen", opener):
+            result = USAGE.fetch_codex_reset_cards(
+                now_epoch=now + USAGE._CODEX_RESET_CARDS_REFRESH_INTERVAL + 1,
+            )
+
+        self.assertEqual(result["count"], 2)
+        self.assertEqual(opener.call_count, 1)
 
     def test_nearest_expiry_refreshes_before_daily_interval(self):
         now = 1_785_000_000

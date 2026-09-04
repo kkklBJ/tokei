@@ -18,9 +18,18 @@ let package = Package(
             name: "TokeiUpdateSecurity",
             path: "Sources/TokeiUpdateSecurity"
         ),
+        .target(
+            name: "GrokBotBridge",
+            path: "Sources/GrokBotBridge"
+        ),
+        .executableTarget(
+            name: "TokeiGrokBotHelper",
+            dependencies: ["GrokBotBridge"],
+            path: "Sources/TokeiGrokBotHelper"
+        ),
         .executableTarget(
             name: "Tokei",
-            dependencies: ["CZstd", "TokeiUpdateSecurity"],
+            dependencies: ["CZstd", "TokeiUpdateSecurity", "GrokBotBridge"],
             path: "Sources/Tokei"
         )
     ]

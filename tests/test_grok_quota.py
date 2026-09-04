@@ -93,6 +93,48 @@ class GrokQuotaTests(unittest.TestCase):
         self.assertFalse(quota["stale"])
         self.assertIsNotNone(quota["reset"])
 
+    def test_local_log_treats_omitted_zero_percent_as_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.configure(root)
+            start = "2026-07-19T08:41:16+00:00"
+            end = "2026-07-26T08:41:16+00:00"
+            write_jsonl(Path(USAGE.GROK_LOG), [{
+                "ts": "2026-07-19T09:00:00+00:00",
+                "msg": "billing: fetched credits config",
+                "ctx": {
+                    "subscriptionTier": "X Premium+",
+                    "config": {
+                        "currentPeriod": {
+                            "type": "USAGE_PERIOD_TYPE_WEEKLY",
+                            "start": start,
+                            "end": end,
+                        },
+                        "billingPeriodStart": start,
+                        "billingPeriodEnd": end,
+                        "isUnifiedBillingUser": True,
+                    },
+                },
+            }])
+
+            quota = USAGE.scan_grok_quota()
+
+        self.assertEqual(quota["pct"], 0.0)
+        self.assertEqual(quota["plan"], "X Premium+")
+        self.assertEqual(quota["source"], "log")
+        self.assertFalse(quota["stale"])
+        self.assertIsNotNone(quota["reset"])
+
+    def test_missing_percent_requires_complete_unified_period(self):
+        quota = USAGE._normalize_grok_billing({
+            "currentPeriod": {
+                "start": "2026-07-19T08:41:16+00:00",
+                "end": "2026-07-26T08:41:16+00:00",
+            },
+        })
+
+        self.assertIsNone(quota)
+
     def test_live_api_only_when_config_enabled(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -408,6 +450,8 @@ class GrokQuotaTests(unittest.TestCase):
                  mock.patch.object(USAGE, "scan_pi",
                                    return_value=USAGE._empty_pi()), \
                  mock.patch.object(USAGE, "scan_workbuddy",
+                                   return_value=USAGE._empty_workbuddy()), \
+                 mock.patch.object(USAGE, "scan_workbuddy_ai",
                                    return_value=USAGE._empty_workbuddy()), \
                  mock.patch.object(USAGE, "scan_opencode",
                                    return_value=USAGE._empty_opencode()), \

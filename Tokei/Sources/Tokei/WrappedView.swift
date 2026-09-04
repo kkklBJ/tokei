@@ -13,6 +13,7 @@ struct WrappedProject: Codable, Identifiable {
 
 struct WrappedBusiest: Codable { var date = ""; var tokens = 0 }
 struct WrappedModel: Codable { var name = "-"; var tokens = 0 }
+struct WrappedPeakDay: Codable { var date: String; var tokens: Int; var projects: [String]? }
 
 struct WrappedData: Codable {
     var total_tokens = 0
@@ -21,6 +22,8 @@ struct WrappedData: Codable {
     var streak_max = 0
     var streak_cur = 0
     var busiest = WrappedBusiest()
+    var peak_days: [WrappedPeakDay]?          // 可选:老 JSON 缺字段时为 nil
+    var day_projects: [String: [String]]?     // 日期→当日项目(合并视图回填用)
     var top_model = WrappedModel()
     var hours: [Int] = []
     var weekday: [Int] = []
@@ -59,6 +62,7 @@ struct WrappedView: View {
         VStack(alignment: .leading, spacing: 12) {
             hero(data)
             statChips(data)
+            if let peaks = data.peak_days, !peaks.isEmpty { peakDaysSection(peaks) }
             if !data.achievements.isEmpty { achievementsSection(data) }
             Divider().opacity(0.15)
             rhythmSection(data)
@@ -212,6 +216,52 @@ struct WrappedView: View {
     }
 
 
+    // MARK: - 巅峰日 Top 3(现存日志 + 持久账本合并的单日高峰)
+    func peakDaysSection(_ peaks: [WrappedPeakDay]) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("巅峰日").font(.system(size: Theme.fontSize(13), weight: .bold)).foregroundStyle(Theme.tPrimary)
+            VStack(spacing: 5) {
+                ForEach(Array(peaks.prefix(3).enumerated()), id: \.element.date) { i, p in
+                    HStack(spacing: 8) {
+                        Text("\(i + 1)")
+                            .font(.system(size: Theme.fontSize(10), weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .frame(width: 18, height: 18)
+                            .background(
+                                Circle().fill(i == 0 ? AnyShapeStyle(Theme.claude.gradient)
+                                                     : AnyShapeStyle(Color.white.opacity(0.14)))
+                            )
+                        Text(peakDate(p.date))
+                            .font(.system(size: Theme.fontSize(11.5), weight: .semibold))
+                            .foregroundStyle(Theme.tPrimary)
+                            .lineLimit(1)
+                        Text(Fmt.human(p.tokens))
+                            .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
+                            .foregroundStyle(Theme.tSecondary)
+                        Spacer(minLength: 6)
+                        if let projs = p.projects, !projs.isEmpty {
+                            Text(projs.joined(separator: " · "))
+                                .font(.system(size: Theme.fontSize(9)))
+                                .foregroundStyle(Theme.tTertiary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                    }
+                    .padding(.horizontal, 9).padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.primary.opacity(0.05)))
+                }
+            }
+        }
+    }
+
+    // "2026-07-21" → "7月21日";异常输入原样返回。
+    func peakDate(_ s: String) -> String {
+        let parts = s.split(separator: "-")
+        guard parts.count == 3, let m = Int(parts[1]), let d = Int(parts[2]) else { return s }
+        return "\(m)月\(d)日"
+    }
+
     // MARK: - 24h rhythm
     func rhythmSection(_ d: WrappedData) -> some View {
         let maxH = max(d.hours.max() ?? 1, 1)
@@ -351,6 +401,7 @@ struct BadgeView: View {
 struct ConfettiView: View {
     @State private var fall = false
     private let palette: [Color] = [Theme.claude, Theme.qoder, Theme.qoderwork, Theme.hermes,
+                                     Theme.deepseekHarness,
                                     Theme.codex, Theme.gemini, Theme.zcode, Theme.mimocode,
                                     Theme.openclaw]
     var body: some View {

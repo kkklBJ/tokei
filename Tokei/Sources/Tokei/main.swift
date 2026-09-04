@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Combine
+import GrokBotBridge
 
 final class Store: ObservableObject {
     @Published var usage: Usage?
@@ -15,6 +16,9 @@ final class Store: ObservableObject {
     @Published var syncDetail = ""
     @Published var syncFailStreak = 0
     @Published var peerLoadIssues: [PeerLoadIssue] = []
+    // popover 的视图树启动时建好后就不再释放,面板关上也还活着。
+    // 动画类视图得靠这个标志判断自己是不是真的能被看见。
+    @Published var popoverVisible = false
 
     let syncManager = SyncManager()
     let quotaHistory = QuotaHistoryStore.shared
@@ -38,6 +42,23 @@ final class Store: ObservableObject {
         }
     }
 
+    func primeCachedUsage() {
+        guard usage == nil, let local = DataLoader.loadCachedUsage() else { return }
+        localUsage = local
+        var allDevices = local
+        if syncEnabled {
+            let report = syncManager.loadPeers()
+            peers = report.peers
+            peerLoadIssues = report.issues
+            if !peers.isEmpty {
+                allDevices = SyncManager.merge(local: local, peers: peers)
+            }
+        }
+        allDevicesUsage = allDevices
+        applyDisplayMode()
+        lastUpdated = "缓存数据 · 后台更新中"
+    }
+
     func refresh() {
         if refreshInFlight {
             refreshPending = true
@@ -58,9 +79,12 @@ final class Store: ObservableObject {
                     if !hadPendingRefresh {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.refresh() }
                     }
-                } else {
+                } else if self.usage == nil {
                     self.loadError = "读取用量失败"
                     self.lastUpdated = "加载失败"
+                } else {
+                    self.loadError = nil
+                    self.lastUpdated = "缓存数据 · 等待刷新"
                 }
                 (NSApp.delegate as? AppDelegate)?.updateStatusTitle()
                 self.finishRefresh()
@@ -128,7 +152,8 @@ final class Store: ObservableObject {
                 ? nil : usage.claude.q7.map { 100 - $0 },
             claudeFableWeekRemaining: usage.claude.qf_stale == true
                 ? nil : usage.claude.qf.map { 100 - $0 },
-            codexWeekRemaining: usage.codex.pw.map { 100 - $0 },
+            codexWeekRemaining: usage.codex.pw_stale == true
+                ? nil : usage.codex.pw.map { 100 - $0 },
             claudeModelTotals: claudeModels,
             codexModelTotals: codexModels
         ))
@@ -195,7 +220,7 @@ final class Store: ObservableObject {
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     let store = Store()
     let panelLayout = PanelLayoutContext()
     var statusItem: NSStatusItem!
@@ -238,11 +263,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // SwiftUI 页面切换本身已有动画。禁用 NSPopover 的尺寸动画，避免 AppKit
         // 在外接显示器的全屏 Space 中按错误屏幕重新计算锚点。
         popover.animates = false
+        popover.delegate = self
 
-        // 启动时先把 Qoder IDE / Grok 实时额度开关落盘到 config.json,
+        // 启动时先把 Qoder IDE / Grok / 千问办公额度开关落盘到 config.json,
         // 确保随后的 refresh() 触发的 Python 扫描能读到正确配置。
         PanelView.syncQoderIdeConfigOnLaunch()
         PanelView.syncGrokLiveQuotaConfigOnLaunch()
+        PanelView.syncQwenWorkQuotaConfigOnLaunch()
+        PanelView.syncProviderQuotaConfigOnLaunch()
         if var syncConfig = store.syncManager.config {
             let interval = SyncManager.normalizedSyncInterval(syncConfig.sync_interval)
             if syncConfig.sync_interval != interval {
@@ -253,6 +281,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 store.startAutoSync(minutes: interval)
             }
         }
+        store.primeCachedUsage()
         store.refresh()
         store.sitReminder.updateRunning()
         Updater.shared.checkForUpdate()
@@ -287,27 +316,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let u = store.usage {
             let ud = UserDefaults.standard
-            // 菜单栏额度来源与「显示卡片」独立：卡片可开，但状态栏只显示用户勾选的来源。
-            if MenuBarQuotaSource.claude.isEnabled,
-               u.claude.q5_stale != true,
-               let q5 = u.claude.q5 {
-                let remaining = 100 - q5
-                metrics.append(.init(kind: .claude, value: String(format: "%.0f", remaining),
-                                     remaining: remaining))
-            }
-            if MenuBarQuotaSource.codex.isEnabled,
-               let quota = u.codex.pw {
-                let remaining = 100 - quota
-                metrics.append(.init(kind: .codex, value: String(format: "%.0f", remaining),
-                                     remaining: remaining))
-            }
-            if MenuBarQuotaSource.grok.isEnabled,
-               u.grok.stale != true,
-               let pct = u.grok.pct {
-                let remaining = 100 - pct
-                metrics.append(.init(kind: .grok, value: String(format: "%.0f", remaining),
-                                     remaining: remaining))
-            }
+            // 菜单栏额度来源与「显示卡片」独立：卡片可开，但状态栏只显示用户勾选的窗口。
+            metrics = MenuBarQuotaSource.metrics(in: u)
             if metrics.isEmpty {
                 // 用户把额度来源全部关掉时：只保留图标，不再回退显示今日 token 总量。
                 let anyQuotaSourceOn = MenuBarQuotaSource.allCases.contains { $0.isEnabled }
@@ -318,6 +328,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let showX = ud.object(forKey: "showCodex") as? Bool ?? true
                     let showP = ud.object(forKey: "showPi") as? Bool ?? true
                     let showW = ud.object(forKey: "showWorkBuddy") as? Bool ?? true
+                    let showWAI = ud.object(forKey: "showWorkBuddyAI") as? Bool ?? true
+                    let showD = ud.object(forKey: "showDeepSeekHarness") as? Bool ?? true
                     let showO = ud.object(forKey: "showOpenCode") as? Bool ?? true
                     let showQC = ud.object(forKey: "showQwenCode") as? Bool ?? true
                     let showQ = ud.object(forKey: "showQoderIde") as? Bool ?? false
@@ -328,6 +340,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     if showX { let r = u.codex.ranges.get(.today); total += Int(r.in + r.out + r.cached) }
                     if showP { let r = u.pi.ranges.get(.today); total += Int(r.in + r.out + r.cr + r.cw + r.reason) }
                     if showW { let r = u.workbuddy.ranges.get(.today); total += Int(r.in + r.out + r.cr + r.cw) }
+                    if showWAI { let r = u.workbuddyAI.ranges.get(.today); total += Int(r.in + r.out + r.cr + r.cw) }
+                    if showD { let r = u.deepseekHarness.ranges.get(.today); total += Int(r.in + r.out + r.cr + r.cw + r.reason) }
                     if showO { let r = u.opencode.ranges.get(.today); total += Int(r.in + r.out + r.cr + r.cw + r.reason) }
                     if showQC { let r = u.qwencode.ranges.get(.today); total += Int(r.in + r.out + r.cr + r.reason) }
                     if showQ { let r = u.qoder.ranges.get(.today); total += Int(r.in + r.out + r.cached) }
@@ -372,13 +386,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         b.contentTintColor = nil
         fitStatusItemWidth(b)
         var summaryParts = displayedMetrics.map { metric in
-            let name: String
-            switch metric.kind {
-            case .claude: name = "Claude"
-            case .codex: name = "Codex"
-            case .grok: name = "Grok"
-            case .total: name = "今日"
-            }
+            let name = metric.kind.displayName
             if metric.remaining != nil {
                 return "\(name) 剩余 \(metric.value)%"
             }
@@ -448,6 +456,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             popover.performClose(nil)
         } else {
             store.refresh()
+            // 轨迹页的额度明细要跑 1~3 秒，面板一开就预热。
+            QuotaDetailRepository.shared.load()
             updatePanelLayout(for: b)
             popover.contentSize = panelLayout.contentSize
             popover.show(relativeTo: b.bounds, of: b, preferredEdge: .minY)
@@ -462,6 +472,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
+    func popoverDidShow(_ notification: Notification) {
+        store.popoverVisible = true
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        store.popoverVisible = false
+    }
 }
 
 // 离屏截图模式:Tokei --shot /path/out.png
@@ -532,6 +549,10 @@ enum Icon {
         }
         exit(0)
     }
+}
+
+if GrokBotQuotaBridge.runIfRequested() {
+    exit(0)
 }
 
 if LoginItemCommandLine.runIfRequested() {

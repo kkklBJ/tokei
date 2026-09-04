@@ -103,6 +103,10 @@ struct QuotaHistoryStoreCheck {
     }
 
     private static func checkProjection() throws {
+        try expect(
+            QuotaHistoryTool.claude.rawValue == "Claude Code",
+            "Claude quota history should use the full product name"
+        )
         let base = 1_800_000_000
         let points = [
             historyPoint(base, 80, 60, 20, activity: []),

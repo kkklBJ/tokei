@@ -4,8 +4,12 @@ struct DailyCost: Codable, Identifiable {
     var date: String
     var claude: Double
     var codex: Double
+    var grok: Double?
     var pi: Double = 0
+    var prime_agent: Double?
     var workbuddy: Double?
+    var workbuddy_ai: Double?
+    var deepseek_harness: Double?
     var qwencode: Double?
     var total: Double
     var c_in: Int = 0
@@ -21,10 +25,24 @@ struct DailyCost: Codable, Identifiable {
     var p_cr: Int = 0
     var p_cw: Int = 0
     var p_reason: Int = 0
+    var pa_in: Int = 0
+    var pa_out: Int = 0
+    var pa_cr: Int = 0
+    var pa_cw: Int = 0
+    var pa_reason: Int = 0
     var w_in: Int?
     var w_out: Int?
     var w_cr: Int?
     var w_cw: Int?
+    var wa_in: Int?
+    var wa_out: Int?
+    var wa_cr: Int?
+    var wa_cw: Int?
+    var d_in: Int?
+    var d_out: Int?
+    var d_cr: Int?
+    var d_cw: Int?
+    var d_reason: Int?
     var q_in: Int?
     var q_out: Int?
     var q_cr: Int?
@@ -71,12 +89,22 @@ struct ModelCost: Codable, Identifiable {
 struct DashboardData: Codable {
     var daily: [DailyCost]
     var models: [ModelCost]
+    var provider_models: [ModelCost]? = nil
 }
 
 struct DashboardPayload: Codable {
     var daily: [DailyCost]
     var models: [ModelCost]
+    var provider_models: [ModelCost]? = nil
     var wrapped: WrappedData
+}
+
+private struct DashboardProviderQuotaItem: Identifiable {
+    var id: String
+    var title: String
+    var quota: ProviderQuotaStat
+    var usage: TokenUsageRange?
+    var tint: Color
 }
 
 final class DashboardRepository: ObservableObject {
@@ -130,13 +158,51 @@ struct DashboardView: View {
     @ObservedObject private var dashboardRepository = DashboardRepository.shared
     @State private var daily: [DailyCost] = []
     @State private var models: [ModelCost] = []
+    @State private var providerModels: [ModelCost] = []
     @State private var wrapped: WrappedData? = nil
     @State private var baseDaily: [DailyCost] = []
     @State private var baseModels: [ModelCost] = []
+    @State private var baseProviderModels: [ModelCost] = []
     @State private var baseWrapped: WrappedData? = nil
     @State private var loading = true
     @State private var wrappedPeriod: WrappedPeriod = .all
     @AppStorage("hideProjects") private var hideProjects = false
+
+    private var providerRangeKey: RangeKey {
+        switch wrappedPeriod {
+        case .day: return .today
+        case .week: return .week
+        case .month: return .month
+        case .year: return .year
+        case .all: return .all
+        }
+    }
+
+    private var providerQuotaItems: [DashboardProviderQuotaItem] {
+        guard let usage = store.usage else { return [] }
+        let range = providerRangeKey
+        let candidates: [(id: String, title: String, quota: ProviderQuotaStat,
+                         usage: TokenUsageRange?, tint: Color)] = [
+            ("antigravity", "Gemini / Antigravity", usage.antigravity, nil, Theme.gemini),
+            ("cursor", "Cursor", usage.cursor,
+             usage.cursor.usage?.ranges.get(range), Theme.cursor),
+            ("zed", "Zed", usage.zed, nil, Theme.zed),
+            ("sub2api", "Sub2API", usage.sub2api,
+             usage.sub2api.usage?.ranges.get(range), Theme.sub2api),
+            ("zai", "z.ai / GLM", usage.zai,
+             usage.zai.usage?.ranges.get(range), Theme.zai),
+        ]
+        return candidates.compactMap { candidate in
+            guard candidate.quota.available else { return nil }
+            return DashboardProviderQuotaItem(
+                id: candidate.id,
+                title: candidate.title,
+                quota: candidate.quota,
+                usage: candidate.usage,
+                tint: candidate.tint
+            )
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -147,9 +213,19 @@ struct DashboardView: View {
                 if let w = wrapped, w.total_tokens > 0 {
                     WrappedView(data: w, period: $wrappedPeriod) { p in loadWrapped(p) }
                 }
-                if !daily.isEmpty {
+                if !providerQuotaItems.isEmpty {
+                    Divider().opacity(0.15)
+                    providerQuotaSection(providerQuotaItems)
+                }
+                if !models.isEmpty {
                     Divider().opacity(0.15)
                     modelSection
+                }
+                if !providerModels.isEmpty {
+                    Divider().opacity(0.15)
+                    providerModelSection
+                }
+                if !daily.isEmpty {
                     if let w = wrapped, !w.projects.isEmpty {
                         Divider().opacity(0.15)
                         projectsSection(w.projects)
@@ -162,10 +238,158 @@ struct DashboardView: View {
         .onAppear { loadData(showLoading: true) }
         .onChange(of: store.showAllDevices) { _ in applyCachedScope(animated: true) }
         .onChange(of: store.syncEnabled) { _ in applyCachedScope(animated: true) }
-        .onReceive(store.$usage) { _ in applyCachedScope(animated: false) }
+        .onReceive(store.$usage) { _ in
+            applyCachedScope(animated: false)
+            // Provider model days are written by the main refresh. Reload the
+            // lightweight dashboard aggregation after that refresh completes so
+            // z.ai/Cursor model rows stay in sync with the quota cards.
+            dashboardRepository.load(wrappedPeriod, force: true)
+        }
         .onReceive(dashboardRepository.$payloads) { payloads in
             guard let payload = payloads[wrappedPeriod.rawValue] else { return }
             apply(payload, animated: false)
+        }
+    }
+
+    @ViewBuilder
+    private func providerQuotaSection(_ items: [DashboardProviderQuotaItem]) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text("账号额度")
+                .font(.system(size: Theme.fontSize(13), weight: .bold))
+            Text("额度来自本机账号登录态；账号用量单独展示，不并入本地工具总计")
+                .font(.system(size: Theme.fontSize(9)))
+                .foregroundStyle(Theme.tTertiary)
+            ForEach(items) { item in
+                providerQuotaCard(item)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func providerQuotaCard(_ item: DashboardProviderQuotaItem) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                Circle().fill(item.tint.gradient).frame(width: 7, height: 7)
+                Text(item.title)
+                    .font(.system(size: Theme.fontSize(11.5), weight: .semibold))
+                    .foregroundStyle(Theme.tPrimary)
+                if let plan = item.quota.plan, !plan.isEmpty {
+                    Text(plan)
+                        .font(.system(size: Theme.fontSize(8.5), weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Theme.tSecondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(item.tint.opacity(0.14)))
+                }
+                Spacer(minLength: 6)
+                if let account = item.quota.account, !account.isEmpty {
+                    Text(account)
+                        .font(.system(size: Theme.fontSize(8.5), design: .monospaced))
+                        .foregroundStyle(Theme.tTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+
+            if let usage = item.usage, usage.totalTokens > 0 {
+                HStack(spacing: 6) {
+                    Text("\(wrappedPeriod.label)账号 Token")
+                        .font(.system(size: Theme.fontSize(9.5)))
+                        .foregroundStyle(Theme.tTertiary)
+                    Spacer()
+                    Text("\(Fmt.human(usage.totalTokens)) · \(usage.models.count) 个模型")
+                        .font(.system(size: Theme.fontSize(9.5), weight: .semibold, design: .monospaced))
+                        .foregroundStyle(item.tint)
+                }
+            }
+
+            ForEach(item.quota.windows) { window in
+                dashboardQuotaWindow(window, tint: item.tint)
+            }
+
+            if !item.quota.details.isEmpty {
+                VStack(spacing: 4) {
+                    ForEach(Array(item.quota.details.prefix(6).enumerated()), id: \.offset) { entry in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(entry.element.label)
+                                .font(.system(size: Theme.fontSize(9)))
+                                .foregroundStyle(Theme.tTertiary)
+                            Spacer(minLength: 6)
+                            Text(entry.element.value)
+                                .font(.system(size: Theme.fontSize(9), weight: .semibold, design: .monospaced))
+                                .foregroundStyle(Theme.tSecondary)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+            }
+
+            HStack(spacing: 5) {
+                Image(systemName: item.quota.stale ? "exclamationmark.triangle" : "clock")
+                    .font(.system(size: Theme.fontSize(8.5)))
+                Text(item.quota.stale
+                     ? "额度数据已过期"
+                     : (item.quota.updated.map { "更新于 \(Fmt.reset($0))" } ?? "尚无更新时间"))
+                    .font(.system(size: Theme.fontSize(8.5), design: .monospaced))
+                Spacer()
+            }
+            .foregroundStyle(item.quota.stale ? Color.orange : Theme.tTertiary)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.045))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(item.tint.opacity(0.16), lineWidth: 0.5)
+                )
+        )
+    }
+
+    @ViewBuilder
+    private func dashboardQuotaWindow(_ window: ProviderQuotaWindow, tint: Color) -> some View {
+        if window.usage_known, let used = window.used_pct {
+            let remaining = max(0, min(100, 100 - used))
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(window.title)
+                        .font(.system(size: Theme.fontSize(10)))
+                        .foregroundStyle(Theme.tSecondary)
+                    Spacer(minLength: 6)
+                    Text(String(format: "%.0f%% 剩余", remaining))
+                        .font(.system(size: Theme.fontSize(9.5), weight: .semibold, design: .monospaced))
+                        .foregroundStyle(tint)
+                }
+                MiniBar(value: remaining, tint: tint)
+                if window.detail != nil || window.reset != nil {
+                    HStack(spacing: 6) {
+                        if let detail = window.detail, !detail.isEmpty {
+                            Text(detail)
+                                .font(.system(size: Theme.fontSize(8.5), design: .monospaced))
+                                .foregroundStyle(Theme.tTertiary)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 4)
+                        if let reset = window.reset {
+                            Text("重置 \(Fmt.reset(reset))")
+                                .font(.system(size: Theme.fontSize(8.5), design: .monospaced))
+                                .foregroundStyle(Theme.tTertiary)
+                        }
+                    }
+                }
+            }
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(window.title)
+                    .font(.system(size: Theme.fontSize(10)))
+                    .foregroundStyle(Theme.tSecondary)
+                Spacer(minLength: 6)
+                Text(window.detail ?? "额度比例未知")
+                    .font(.system(size: Theme.fontSize(8.5), design: .monospaced))
+                    .foregroundStyle(Theme.tTertiary)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(2)
+            }
         }
     }
 
@@ -188,10 +412,34 @@ struct DashboardView: View {
         }
     }
 
+    var providerModelSection: some View {
+        let sorted = providerModels.sorted { ($0.tokens ?? 0) > ($1.tokens ?? 0) }
+        let top = Array(sorted.prefix(8))
+        let maxTokens = Double(top.first?.tokens ?? 1)
+        return VStack(alignment: .leading, spacing: 9) {
+            Text("账号 Provider 模型").font(.system(size: Theme.fontSize(13), weight: .bold))
+            Text("账号级统计单独展示，不并入本地工具总计")
+                .font(.system(size: Theme.fontSize(9)))
+                .foregroundStyle(Theme.tTertiary)
+            ForEach(top) { model in
+                StatBar(
+                    name: model.name,
+                    tokens: model.tokens ?? ((model.in ?? 0) + (model.out ?? 0)),
+                    cost: model.cost,
+                    maxTokens: maxTokens,
+                    tint: modelTint(model.tool)
+                )
+            }
+        }
+    }
+
     func modelTint(_ tool: String) -> Color {
         switch tool {
         case "codex": return Theme.codex
         case "gemini": return Theme.gemini
+        case "cursor": return Theme.cursor
+        case "zai": return Theme.zai
+        case "grok_bot": return Theme.grokBot
         case "grok": return Theme.grok
         case "qoder": return Theme.qoder
         case "hermes": return Theme.hermes
@@ -199,9 +447,13 @@ struct DashboardView: View {
         case "mimocode": return Theme.mimocode
         case "openclaw": return Theme.openclaw
         case "pi": return Theme.pi
+        case "prime_agent": return Theme.primeAgent
         case "workbuddy": return Theme.workbuddy
+        case "workbuddy_ai": return Theme.workbuddyAI
+        case "deepseek_harness": return Theme.deepseekHarness
         case "opencode": return Theme.opencode
         case "qwencode": return Theme.qwencode
+        case "kimicode": return Theme.kimicode
         default: return Theme.claude
         }
     }
@@ -265,7 +517,11 @@ struct DashboardView: View {
     }
 
     func heatDetail(_ d: DailyCost) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let workbuddyAITokens = optionalTokenTotal(d.wa_in, d.wa_out, d.wa_cr, d.wa_cw)
+        let deepseekTokens = optionalTokenTotal(d.d_in, d.d_out, d.d_cr, d.d_cw, d.d_reason)
+        let grokTokens = optionalTokenTotal(d.g_in, d.g_out, d.g_cr, d.g_reason)
+
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(d.date).font(.system(size: Theme.fontSize(13), weight: .bold, design: .monospaced))
                     .foregroundStyle(Theme.tPrimary)
@@ -281,67 +537,32 @@ struct DashboardView: View {
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 105), spacing: 12)],
                       alignment: .leading, spacing: 8) {
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 4) {
-                        Circle().fill(Theme.claude).frame(width: 6, height: 6)
-                        Text("Claude").font(.system(size: Theme.fontSize(11), weight: .medium)).foregroundStyle(Theme.claude)
-                    }
-                    Text("\(Fmt.human(d.c_in + d.c_out + d.c_cr + d.c_cw)) tok")
-                        .font(.system(size: Theme.fontSize(11), design: .monospaced)).foregroundStyle(Theme.tTertiary)
-                    Text(String(format: "$%.2f", d.claude))
-                        .font(.system(size: Theme.fontSize(12), weight: .semibold, design: .monospaced)).foregroundStyle(Theme.tSecondary)
+                heatProviderMetric("Claude", tint: Theme.claude,
+                                   tokens: d.c_in + d.c_out + d.c_cr + d.c_cw, cost: d.claude)
+                heatProviderMetric("Codex", tint: Theme.codex,
+                                   tokens: d.x_in + d.x_out, cost: d.codex)
+                heatProviderMetric("Pi", tint: Theme.pi,
+                                   tokens: d.p_in + d.p_out + d.p_cr + d.p_cw + d.p_reason, cost: d.pi)
+                heatProviderMetric("Prime Agent", tint: Theme.primeAgent,
+                                   tokens: d.pa_in + d.pa_out + d.pa_cr + d.pa_cw + d.pa_reason,
+                                   cost: d.prime_agent ?? 0)
+                heatProviderMetric("WorkBuddy", tint: Theme.workbuddy,
+                                   tokens: (d.w_in ?? 0) + (d.w_out ?? 0) + (d.w_cr ?? 0) + (d.w_cw ?? 0),
+                                   cost: d.workbuddy ?? 0)
+                if workbuddyAITokens > 0 {
+                    heatProviderMetric("WorkBuddy Intl.", tint: Theme.workbuddyAI,
+                                       tokens: workbuddyAITokens, cost: d.workbuddy_ai ?? 0)
                 }
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 4) {
-                        Circle().fill(Theme.codex).frame(width: 6, height: 6)
-                        Text("Codex").font(.system(size: Theme.fontSize(11), weight: .medium)).foregroundStyle(Theme.codex)
-                    }
-                    Text("\(Fmt.human(d.x_in + d.x_out)) tok")
-                        .font(.system(size: Theme.fontSize(11), design: .monospaced)).foregroundStyle(Theme.tTertiary)
-                    Text(String(format: "$%.2f", d.codex))
-                        .font(.system(size: Theme.fontSize(12), weight: .semibold, design: .monospaced)).foregroundStyle(Theme.tSecondary)
+                if deepseekTokens > 0 {
+                    heatProviderMetric("DeepSeek Harness", tint: Theme.deepseekHarness,
+                                       tokens: deepseekTokens, cost: d.deepseek_harness ?? 0)
                 }
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 4) {
-                        Circle().fill(Theme.pi).frame(width: 6, height: 6)
-                        Text("Pi").font(.system(size: Theme.fontSize(11), weight: .medium)).foregroundStyle(Theme.pi)
-                    }
-                    Text("\(Fmt.human(d.p_in + d.p_out + d.p_cr + d.p_cw + d.p_reason)) tok")
-                        .font(.system(size: Theme.fontSize(11), design: .monospaced)).foregroundStyle(Theme.tTertiary)
-                    Text(String(format: "$%.2f", d.pi))
-                        .font(.system(size: Theme.fontSize(12), weight: .semibold, design: .monospaced)).foregroundStyle(Theme.tSecondary)
-                }
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 4) {
-                        Circle().fill(Theme.workbuddy).frame(width: 6, height: 6)
-                        Text("WorkBuddy").font(.system(size: Theme.fontSize(11), weight: .medium)).foregroundStyle(Theme.workbuddy)
-                    }
-                    Text("\(Fmt.human((d.w_in ?? 0) + (d.w_out ?? 0) + (d.w_cr ?? 0) + (d.w_cw ?? 0))) tok")
-                        .font(.system(size: Theme.fontSize(11), design: .monospaced)).foregroundStyle(Theme.tTertiary)
-                    Text(String(format: "$%.2f", d.workbuddy ?? 0))
-                        .font(.system(size: Theme.fontSize(12), weight: .semibold, design: .monospaced)).foregroundStyle(Theme.tSecondary)
-                }
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 4) {
-                        Circle().fill(Theme.qwencode).frame(width: 6, height: 6)
-                        Text("Qwen Code").font(.system(size: Theme.fontSize(11), weight: .medium)).foregroundStyle(Theme.qwencode)
-                    }
-                    Text("\(Fmt.human((d.q_in ?? 0) + (d.q_out ?? 0) + (d.q_cr ?? 0) + (d.q_reason ?? 0))) tok")
-                        .font(.system(size: Theme.fontSize(11), design: .monospaced)).foregroundStyle(Theme.tTertiary)
-                    Text(String(format: "$%.2f", d.qwencode ?? 0))
-                        .font(.system(size: Theme.fontSize(12), weight: .semibold, design: .monospaced)).foregroundStyle(Theme.tSecondary)
-                }
-                if (d.g_in ?? 0) + (d.g_out ?? 0) + (d.g_cr ?? 0) + (d.g_reason ?? 0) > 0 {
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 4) {
-                            Circle().fill(Theme.grok).frame(width: 6, height: 6)
-                            Text("Grok Build").font(.system(size: Theme.fontSize(11), weight: .medium)).foregroundStyle(Theme.grok)
-                        }
-                        Text("\(Fmt.human((d.g_in ?? 0) + (d.g_out ?? 0) + (d.g_cr ?? 0) + (d.g_reason ?? 0))) tok")
-                            .font(.system(size: Theme.fontSize(11), design: .monospaced)).foregroundStyle(Theme.tTertiary)
-                        Text("成本未提供")
-                            .font(.system(size: Theme.fontSize(10), weight: .medium)).foregroundStyle(Theme.tTertiary)
-                    }
+                heatProviderMetric("Qwen Code", tint: Theme.qwencode,
+                                   tokens: (d.q_in ?? 0) + (d.q_out ?? 0) + (d.q_cr ?? 0) + (d.q_reason ?? 0),
+                                   cost: d.qwencode ?? 0)
+                if grokTokens > 0 {
+                    heatProviderMetric("Grok Build", tint: Theme.grok,
+                                       tokens: grokTokens, cost: d.grok ?? 0)
                 }
             }
         }
@@ -350,6 +571,27 @@ struct DashboardView: View {
             .fill(Color.black.opacity(0.3))
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(Theme.claude.opacity(0.2), lineWidth: 0.5)))
+    }
+
+    private func heatProviderMetric(_ name: String, tint: Color, tokens: Int, cost: Double) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Circle().fill(tint).frame(width: 6, height: 6)
+                Text(name)
+                    .font(.system(size: Theme.fontSize(11), weight: .medium))
+                    .foregroundStyle(tint)
+            }
+            Text("\(Fmt.human(tokens)) tok")
+                .font(.system(size: Theme.fontSize(11), design: .monospaced))
+                .foregroundStyle(Theme.tTertiary)
+            Text(String(format: "$%.2f", cost))
+                .font(.system(size: Theme.fontSize(12), weight: .semibold, design: .monospaced))
+                .foregroundStyle(Theme.tSecondary)
+        }
+    }
+
+    private func optionalTokenTotal(_ values: Int?...) -> Int {
+        values.reduce(0) { total, value in total + (value ?? 0) }
     }
 
     var weekStrip: some View {
@@ -520,7 +762,7 @@ struct DashboardView: View {
     func loadData(showLoading: Bool = false) {
         if let cached = dashboardRepository.payload(for: wrappedPeriod) {
             apply(cached, animated: false)
-        } else if showLoading || (daily.isEmpty && models.isEmpty && wrapped == nil) {
+        } else if showLoading || (daily.isEmpty && models.isEmpty && providerModels.isEmpty && wrapped == nil) {
             loading = true
         }
         dashboardRepository.load(wrappedPeriod)
@@ -536,6 +778,7 @@ struct DashboardView: View {
     func apply(_ payload: DashboardPayload, animated: Bool) {
         baseDaily = payload.daily
         baseModels = payload.models
+        baseProviderModels = payload.provider_models ?? []
         baseWrapped = payload.wrapped
         applyCachedScope(animated: animated)
         loading = false
@@ -544,17 +787,23 @@ struct DashboardView: View {
     func applyCachedScope(animated: Bool) {
         let update = {
             let fallback = DashboardData(daily: baseDaily, models: baseModels)
-            if let scoped = scopedUsage() {
+            let scoped = scopedUsage()
+            let providerUsage = scoped ?? store.localUsage ?? store.usage
+            let grokBotModels = grokBotModelsForCurrentScope(usage: providerUsage)
+            providerModels = baseProviderModels.filter { $0.tool != "grok_bot" }
+            if let scoped {
                 let scopedDaily = allDeviceDaily(period: wrappedPeriod)
                 daily = scopedDaily
-                models = Self.dashboardData(from: scoped, period: wrappedPeriod, fallback: fallback).models
+                models = Self.dashboardData(from: scoped, period: wrappedPeriod, fallback: fallback)
+                    .models.filter { $0.tool != "grok_bot" } + grokBotModels
                 wrapped = allDeviceWrapped(from: scoped, period: wrappedPeriod, daily: scopedDaily)
             } else {
                 daily = baseDaily
-                models = baseModels
+                models = baseModels.filter { $0.tool != "grok_bot" } + grokBotModels
                 wrapped = baseWrapped
             }
-            if !daily.isEmpty || !models.isEmpty || wrapped != nil {
+            if !daily.isEmpty || !models.isEmpty || !providerModels.isEmpty
+                || !providerQuotaItems.isEmpty || wrapped != nil {
                 loading = false
             }
         }
@@ -562,6 +811,29 @@ struct DashboardView: View {
             withAnimation(.easeInOut(duration: 0.22), update)
         } else {
             update()
+        }
+    }
+
+    private func grokBotModelsForCurrentScope(usage: Usage?) -> [ModelCost] {
+        guard let range = usage?.grokBot.quota.usage?.ranges.get(providerRangeKey) else {
+            return baseModels.filter { $0.tool == "grok_bot" }
+        }
+        return range.models.map { model in
+            let tokens = model.tokens ?? (model.in + model.out + model.cr + model.cw + model.reason)
+            let outputThousands = Double(model.out) / 1_000
+            return ModelCost(
+                name: model.name,
+                cost: model.cost,
+                tool: "grok_bot",
+                input: model.in,
+                out: model.out,
+                cr: model.cr,
+                cw: model.cw,
+                reason: model.reason,
+                tokens: tokens,
+                cost_per_k: outputThousands > 0 ? model.cost / outputThousands : 0,
+                out_ratio: tokens > 0 ? Double(model.out) / Double(tokens) * 100 : 0
+            )
         }
     }
 
@@ -617,6 +889,25 @@ struct DashboardView: View {
         if let busiest = scopedDaily.max(by: { $0.tokens < $1.tokens }) {
             data.busiest = WrappedBusiest(date: busiest.date, tokens: busiest.tokens)
         }
+        // 巅峰日 Top 3 按设备维度从 scopedDaily 重算;项目名按日期从本机/peer 原始数据回填
+        var peakProjects: [String: [String]] = [:]
+        for payload in [baseWrapped] + peerWrapped.map { Optional($0) } {
+            for (date, projs) in payload?.day_projects ?? [:] where !projs.isEmpty {
+                peakProjects[date, default: []].append(contentsOf: projs)
+            }
+            for peak in payload?.peak_days ?? [] {
+                guard let projs = peak.projects, !projs.isEmpty else { continue }
+                peakProjects[peak.date, default: []].append(contentsOf: projs)
+            }
+        }
+        data.peak_days = scopedDaily
+            .filter { $0.tokens > 0 }
+            .sorted { $0.tokens == $1.tokens ? $0.date < $1.date : $0.tokens > $1.tokens }
+            .prefix(3)
+            .map { day in
+                let projs = peakProjects[day.date].map { Array(Set($0)).sorted().prefix(3).map { $0 } }
+                return WrappedPeakDay(date: day.date, tokens: day.tokens, projects: projs)
+            }
 
         let firstCandidates = ([baseWrapped?.first_day ?? ""] + peerWrapped.map(\.first_day) + activeDays)
             .filter { !$0.isEmpty }
@@ -720,8 +1011,11 @@ struct DashboardView: View {
         DailyCost(date: lhs.date,
                   claude: lhs.claude + rhs.claude,
                   codex: lhs.codex + rhs.codex,
+                  grok: (lhs.grok ?? 0) + (rhs.grok ?? 0),
                   pi: lhs.pi + rhs.pi,
                   workbuddy: (lhs.workbuddy ?? 0) + (rhs.workbuddy ?? 0),
+                  workbuddy_ai: (lhs.workbuddy_ai ?? 0) + (rhs.workbuddy_ai ?? 0),
+                  deepseek_harness: (lhs.deepseek_harness ?? 0) + (rhs.deepseek_harness ?? 0),
                   qwencode: (lhs.qwencode ?? 0) + (rhs.qwencode ?? 0),
                   total: lhs.total + rhs.total,
                   c_in: lhs.c_in + rhs.c_in,
@@ -737,10 +1031,24 @@ struct DashboardView: View {
                   p_cr: lhs.p_cr + rhs.p_cr,
                   p_cw: lhs.p_cw + rhs.p_cw,
                   p_reason: lhs.p_reason + rhs.p_reason,
+                  pa_in: lhs.pa_in + rhs.pa_in,
+                  pa_out: lhs.pa_out + rhs.pa_out,
+                  pa_cr: lhs.pa_cr + rhs.pa_cr,
+                  pa_cw: lhs.pa_cw + rhs.pa_cw,
+                  pa_reason: lhs.pa_reason + rhs.pa_reason,
                   w_in: (lhs.w_in ?? 0) + (rhs.w_in ?? 0),
                   w_out: (lhs.w_out ?? 0) + (rhs.w_out ?? 0),
                   w_cr: (lhs.w_cr ?? 0) + (rhs.w_cr ?? 0),
                   w_cw: (lhs.w_cw ?? 0) + (rhs.w_cw ?? 0),
+                  wa_in: (lhs.wa_in ?? 0) + (rhs.wa_in ?? 0),
+                  wa_out: (lhs.wa_out ?? 0) + (rhs.wa_out ?? 0),
+                  wa_cr: (lhs.wa_cr ?? 0) + (rhs.wa_cr ?? 0),
+                  wa_cw: (lhs.wa_cw ?? 0) + (rhs.wa_cw ?? 0),
+                  d_in: (lhs.d_in ?? 0) + (rhs.d_in ?? 0),
+                  d_out: (lhs.d_out ?? 0) + (rhs.d_out ?? 0),
+                  d_cr: (lhs.d_cr ?? 0) + (rhs.d_cr ?? 0),
+                  d_cw: (lhs.d_cw ?? 0) + (rhs.d_cw ?? 0),
+                  d_reason: (lhs.d_reason ?? 0) + (rhs.d_reason ?? 0),
                   q_in: (lhs.q_in ?? 0) + (rhs.q_in ?? 0),
                   q_out: (lhs.q_out ?? 0) + (rhs.q_out ?? 0),
                   q_cr: (lhs.q_cr ?? 0) + (rhs.q_cr ?? 0),
@@ -878,9 +1186,15 @@ struct DashboardView: View {
         appendTokenModels(usage.mimocode.ranges.get(key).models, tool: "mimocode", suffix: "MiMoCode", to: &out)
         appendTokenModels(usage.openclaw.ranges.get(key).models, tool: "openclaw", suffix: "OpenClaw", to: &out)
         appendTokenModels(usage.pi.ranges.get(key).models, tool: "pi", suffix: "Pi", to: &out)
+        appendTokenModels(usage.prime_agent.ranges.get(key).models, tool: "prime_agent", suffix: "Prime Agent", to: &out)
         appendTokenModels(usage.workbuddy.ranges.get(key).models, tool: "workbuddy", suffix: "WorkBuddy", to: &out)
+        appendTokenModels(usage.workbuddyAI.ranges.get(key).models, tool: "workbuddy_ai",
+                          suffix: "WorkBuddy Intl.", to: &out)
+        appendTokenModels(usage.deepseekHarness.ranges.get(key).models, tool: "deepseek_harness",
+                          suffix: "DeepSeek Harness", to: &out)
         appendTokenModels(usage.opencode.ranges.get(key).models, tool: "opencode", suffix: "OpenCode", to: &out)
         appendTokenModels(usage.qwencode.ranges.get(key).models, tool: "qwencode", suffix: "Qwen Code", to: &out)
+        appendTokenModels(usage.kimicode.ranges.get(key).models, tool: "kimicode", suffix: "Kimi Code", to: &out)
 
         return out.sorted {
             if ($0.tokens ?? 0) != ($1.tokens ?? 0) { return ($0.tokens ?? 0) > ($1.tokens ?? 0) }
@@ -934,8 +1248,11 @@ struct DashboardView: View {
             + openClawTotal(usage.openclaw.ranges.get(key))
             + tokenUsageTotal(usage.pi.ranges.get(key))
             + tokenUsageTotal(usage.workbuddy.ranges.get(key))
+            + tokenUsageTotal(usage.workbuddyAI.ranges.get(key))
+            + tokenUsageTotal(usage.deepseekHarness.ranges.get(key))
             + tokenUsageTotal(usage.opencode.ranges.get(key))
             + tokenUsageTotal(usage.qwencode.ranges.get(key))
+            + tokenUsageTotal(usage.kimicode.ranges.get(key))
     }
 
     static func usageTotalCost(_ usage: Usage, _ key: RangeKey) -> Double {
@@ -947,9 +1264,13 @@ struct DashboardView: View {
             + usage.mimocode.ranges.get(key).cost
             + usage.openclaw.ranges.get(key).cost
             + usage.pi.ranges.get(key).cost
+             + usage.prime_agent.ranges.get(key).cost
             + usage.workbuddy.ranges.get(key).cost
+            + usage.workbuddyAI.ranges.get(key).cost
+            + usage.deepseekHarness.ranges.get(key).cost
             + usage.opencode.ranges.get(key).cost
             + usage.qwencode.ranges.get(key).cost
+            + usage.kimicode.ranges.get(key).cost
     }
 
     static func tokenUsageTotal(_ r: TokenUsageRange) -> Int {

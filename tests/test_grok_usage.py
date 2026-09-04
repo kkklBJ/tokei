@@ -119,6 +119,8 @@ class GrokUsageTests(unittest.TestCase):
         self.assertEqual(usage["cr"], 900)
         self.assertEqual(usage["out"], 110)
         self.assertEqual(usage["reason"], 40)
+        self.assertAlmostEqual(usage["cost"], 0.00237, places=8)
+        self.assertAlmostEqual(usage["models"]["grok-4.5"]["cost"], 0.00237, places=8)
         self.assertEqual(usage["usage_calls"], 2)
         self.assertEqual(usage["errors"], 1)
         self.assertEqual(usage["cancellations"], 1)
@@ -181,6 +183,59 @@ class GrokUsageTests(unittest.TestCase):
         self.assertEqual(project_row["sessions"], 1)
         self.assertEqual(project_row["tokens"], 1100)
         self.assertEqual(project_row["top_model"], "Grok 4.5 (Grok Build)")
+
+    def test_cost_flows_to_card_dashboard_wrapped_and_project(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / ".grok"
+            self.configure(root)
+            now = datetime.now().astimezone().replace(microsecond=0)
+            timestamp = now.isoformat()
+            day_key = now.date().isoformat()
+            sid = "019f-cost-session"
+            project = "/tmp/grok-cost-project"
+            self.create_session(root, sid, project, timestamp, with_signals=False)
+            write_jsonl(root / "logs" / "unified.jsonl", [
+                usage_line(sid, timestamp, 1, 2_000_000, 1_000_000, 200_000, 50_000),
+            ])
+            cache = {"v": USAGE._SCAN_CACHE_VERSION}
+            result = USAGE.scan_grok(USAGE.range_bounds(), cache)
+            USAGE._cache_dashboard_days(cache, USAGE._GROK_DAYS_CACHE_KEY, result["days"])
+            USAGE._save_scan_cache(cache)
+
+            daily = USAGE.build_daily_costs("all", refresh=False)
+            wrapped = USAGE.build_wrapped("all", refresh=False)
+            output = io.StringIO()
+            with mock.patch.object(USAGE, "compute"), contextlib.redirect_stdout(output):
+                USAGE.projects()
+            projects = json.loads(output.getvalue())
+
+        expected = 3.5
+        usage = result["ranges"]["all"]
+        self.assertAlmostEqual(usage["cost"], expected, places=6)
+        self.assertAlmostEqual(usage["models"]["grok-4.5"]["cost"], expected, places=6)
+        row = next(item for item in daily["daily"] if item["date"] == day_key)
+        self.assertEqual(row["grok"], expected)
+        self.assertEqual(row["total"], expected)
+        model = next(item for item in daily["models"] if item["tool"] == "grok")
+        self.assertEqual(model["cost"], expected)
+        self.assertAlmostEqual(wrapped["total_cost"], expected, places=6)
+        project_row = next(item for item in projects if item["path"] == project)
+        self.assertAlmostEqual(project_row["cost"], expected, places=6)
+
+    def test_grok_46_uses_high_context_price_at_200k_prompt_tokens(self):
+        below_threshold = {"in": 149_999, "cr": 50_000, "out": 10_000, "reason": 0}
+        at_threshold = {"in": 150_000, "cr": 50_000, "out": 10_000, "reason": 0}
+
+        self.assertAlmostEqual(
+            USAGE._grok_usage_cost(below_threshold, "grok-4.6"),
+            0.384998,
+            places=8,
+        )
+        self.assertAlmostEqual(
+            USAGE._grok_usage_cost(at_threshold, "grok-4.6"),
+            0.77,
+            places=8,
+        )
 
     def test_usage_is_classified_by_inference_timestamp(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -1,5 +1,11 @@
 {
   "models": {
+    "openai/gpt-5.6-sol": {
+      "in": 4.0,
+      "out": 20.0,
+      "cache_read": 0.4,
+      "cache_write": 5.0
+    },
     "qwen/qwen3.7-plus": {
       "in": 0.39,
       "out": 1.16,
@@ -8,8 +14,13 @@
     }
   },
   "aliases": {
+    "gpt-5.6": "openai/gpt-5.6-sol",
     "qwen3.7-plus": "qwen/qwen3.7-plus",
     "qwen-latest-series-invite-beta-v23": "qwen/qwen3.7-plus",
+    "qwen3.8-max-0902": "qwen/qwen3.8-max",
+    "qwen3.8-max-2026-09-02": "qwen/qwen3.8-max",
+    "qwen3.8-max-preview": "qwen/qwen3.8-max",
+    "qwen3.8:27b": "qwen/qwen3.8-27b",
     "gemini-3-pro-preview": "google/gemini-3.1-pro-preview"
   }
 }

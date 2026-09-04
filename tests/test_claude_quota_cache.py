@@ -163,6 +163,42 @@ class ClaudeQuotaCacheTests(unittest.TestCase):
         self.assertTrue(expired["q7_stale"])
         self.assertTrue(expired["qf_stale"])
 
+    def test_native_quota_environment_bypasses_python_zstd_dependency(self):
+        native = {
+            "q5": 36.0,
+            "q5_reset": self.now + 3600,
+            "q7": 13.0,
+            "q7_reset": self.now + 7 * 86400,
+            "qf": 26.0,
+            "qf_reset": self.now + 7 * 86400,
+            "q_updated": self.now - 10,
+            "ignored": "not forwarded",
+        }
+        with mock.patch.dict(
+                os.environ,
+                {"TOKEI_CLAUDE_QUOTA_JSON": json.dumps(native)},
+                clear=False), \
+             mock.patch.object(
+                 USAGE, "_scan_claude_plan_raw",
+                 side_effect=AssertionError("native quota should bypass Python zstd")):
+            result = USAGE.scan_claude_plan()
+
+        self.assertEqual(result["q5"], 36.0)
+        self.assertEqual(result["q7"], 13.0)
+        self.assertEqual(result["qf"], 26.0)
+        self.assertFalse(result["q7_stale"])
+        self.assertNotIn("ignored", result)
+
+    def test_invalid_native_quota_environment_falls_back_to_python_scan(self):
+        fallback = {"q5": 9.0, "q_updated": self.now}
+        with mock.patch.dict(
+                os.environ, {"TOKEI_CLAUDE_QUOTA_JSON": "not-json"}, clear=False), \
+             mock.patch.object(USAGE, "_scan_claude_plan_raw", return_value=fallback) as scan:
+            result = USAGE.scan_claude_plan()
+
+        self.assertEqual(result, fallback)
+        scan.assert_called_once_with()
+
 
 if __name__ == "__main__":
     unittest.main()

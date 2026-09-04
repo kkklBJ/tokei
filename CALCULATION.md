@@ -1,6 +1,6 @@
 # Tokei 计算逻辑
 
-Tokei 读取本地 AI CLI 工具的日志,统计 token 用量与成本。所有数据纯本地读取,不联网。
+Tokei 主要读取本地 AI 工具日志，统计 token 用量与成本。额度查询按工具使用本地日志或已有的本机登录态；需要联网的查询会明确标注并提供开关。
 
 ---
 
@@ -9,16 +9,25 @@ Tokei 读取本地 AI CLI 工具的日志,统计 token 用量与成本。所有�
 | 工具 | 日志路径 | 格式 |
 |------|---------|------|
 | Claude Code | `~/.claude/*/*.jsonl` | JSONL, `type=assistant` 行含 `message.usage` |
-| Codex | `~/.codex/**/rollout-*.jsonl` | JSONL, `payload.info.last_token_usage` |
-| Gemini CLI | `~/.gemini/*/chats/session-*.json` | JSON, `messages[].tokens` |
+| Gemini / Antigravity CLI | `~/.gemini/antigravity-cli/conversations/*.db` / `~/.gemini/*/chats/session-*.json` | SQLite (`gen_metadata` protobuf) / JSON (`messages[].tokens`) |
 | Grok Build | `${GROK_HOME:-~/.grok}/logs/unified.jsonl` + `sessions/*/*/{summary,signals}.json` | JSONL, `shell.turn.inference_done` + 会话指标 |
-| Qoder | `~/Library/Application Support/QoderWork/data/agents.db` | SQLite, `messages.metadata` |
+| Grok Bot | `~/Library/Application Support/Grok Bot/sand-client-persistence/*.blob` | JSON 快照；会话、消息、响应、工具调用、时间 |
+| Qoder Desktop | `~/Library/Application Support/Qoder/SharedClientCache/cache/db/local.db` | SQLite, `chat_message.token_info` / `model_info` |
+| QoderWork | `~/Library/Application Support/QoderWork/data/agents.db` | SQLite, `messages.metadata` |
+| Qoder CLI | `~/.qoder/projects/**/*.jsonl` | JSONL, 会话/调用/工具/时长；文本量估算 Token |
 | Hermes | `~/.hermes/state.db` + `~/.hermes/profiles/*/state.db` | SQLite, `session_model_usage*` 用量表，回退 `sessions` 表 |
 | OpenClaw | `~/.openclaw/agents/*/sessions/*.jsonl` + `~/.openclaw/state/openclaw.sqlite` | JSONL 用量 + SQLite 任务 |
 | Pi Coding Agent CLI | `~/.pi/agent/sessions/<project>/*.jsonl` | JSONL, `message.usage` |
+| Prime Agent | `~/.prime/agent/sessions/*.jsonl` + `session-artifacts/**/**/*.jsonl` | JSONL, assistant `message.usage` |
 | WorkBuddy | `~/.workbuddy/projects/<project>/*.jsonl` | JSONL, `message.usage` / `providerData.usage` |
+| WorkBuddy Intl. | `~/.workbuddy-ai/projects/<project>/*.jsonl` | JSONL, `message.usage` / `providerData.usage` |
+| DeepSeek Harness | `~/.dsh/sessions/**/session.jsonl.zstd` | 多帧 zstd JSONL，最终 `assistant/message.data.usage` |
 | OpenCode | `~/.local/share/opencode/opencode.db`，旧版回退 `~/.local/share/opencode/storage/message/ses_*/msg_*.json` | SQLite/JSON, `tokens` + `cost` |
 | Qwen Code | `${QWEN_RUNTIME_DIR:-~/.qwen}/usage/token-usage-*.jsonl` + `~/.qwen/usage_record.jsonl` | JSONL,逐请求记录 + 会话汇总 |
+| 千问办公（QwenWork） | `~/.qwenworkcn/mcp-adaptor.config` + `.status.json` 文件元数据 + 官方桌面端 `127.0.0.1` MCP | JSON-RPC，`qw_query` / `qwenwork.usage`（默认关闭） |
+| Kimi Code | `${KIMI_CODE_HOME:-~/.kimi-code}/sessions/*/*/agents/*/wire.jsonl`；兼容旧版 `${KIMI_SHARE_DIR:-~/.kimi}/sessions/*/*/wire.jsonl` | JSONL, protocol 1.5 `usage.record` / protocol 1 `StatusUpdate.token_usage` |
+| ZCode | `~/.zcode/cli/db/db.sqlite` | SQLite, `model_usage` Token 明细 |
+| MiMoCode | `$XDG_DATA_HOME/mimocode/mimocode*.db`，macOS 使用 `~/Library/Application Support/mimocode/` | SQLite, OpenCode-compatible `message` 数据 |
 
 ---
 
@@ -89,6 +98,37 @@ token 快照误删。
 - 推理 = `usage.reasoning`(如果存在)
 - 成本 = `usage.cost.total`(优先使用)
 
+**DeepSeek Harness** — 底层字段互斥保存，卡片主口径与 Harness 自身一致:
+- 输入 = `inputTokens + cacheReadTokens + cacheWriteTokens`
+- 输出 = `outputTokens`（已包含 `reasoningTokens`）
+- 缓存读、缓存写、推理作为输入/输出的组成明细展示
+- 总量 = 输入 + 输出
+- `deepseek-official` 路由固定采用 DeepSeek 官方直连价，不受 OpenRouter 价格更新影响
+- V4 Pro 缓存未命中输入、缓存命中输入、输出：`$0.435 / $0.003625 / $0.87` 每百万 Token
+- V4 Flash 缓存未命中输入、缓存命中输入、输出：`$0.14 / $0.0028 / $0.28` 每百万 Token
+
+**Kimi Code** — 官方 wire 日志字段独立:
+- protocol 1.5 输入 = `usage.inputOther`
+- protocol 1.5 输出 = `usage.output`
+- protocol 1.5 缓存读 = `usage.inputCacheRead`
+- protocol 1.5 缓存写 = `usage.inputCacheCreation`
+- protocol 1 使用对应的 `token_usage.input_other`、`output`、`input_cache_read`、`input_cache_creation`
+
+protocol 1.5 为每个 Agent 单独保存 `agents/<agent>/wire.jsonl`。Tokei 扫描全部 Agent wire，
+但使用 `state.json.id` 将它们归并为同一会话，并从 `state.json.cwd` 获取项目。旧 protocol 1
+仍递归展开主 wire 中的 `SubagentEvent`，且不扫描旧 `session/subagents`，避免重复。
+新格式提供权威 `model`，可展示模型明细；两种格式都不持久化实际成本，因此 Kimi Code
+卡片不展示推测的 API 成本。
+**Prime Agent** — Usage 字段与 Pi Coding Agent 一致:
+- 输入 = `usage.input`
+- 输出 = `usage.output`
+- 缓存读 = `usage.cacheRead`
+- 缓存写 = `usage.cacheWrite`
+- 推理 = `usage.reasoning`（通常没有，按 0 处理）
+- 成本 = `usage.cost.total`，缺失时按价格表估算
+
+只读取 assistant message 的逐次 usage；`child_usage_attributed` 是父会话聚合 bookkeeping，不重复计入。RLM 子代理日志按独立 session 参与统计。
+
 **Qwen Code** — `inputTokens` 已包含缓存,`thoughtsTokens` 独立:
 - 输入 = `inputTokens - cachedTokens`
 - 输出 = `outputTokens`
@@ -111,6 +151,11 @@ Tokei 优先读取逐请求日志以获得进行中会话和小时分布。旧�
 旧版 `inference_done` 没有 token 字段，只在卡片中降级展示上下文快照；上下文快照不会计入
 Dashboard、Wrapped 或项目 token 总量。
 
+**Grok Bot** — 同一 `requestId` 下可能连续写入多条流式 `send-message` 事件，响应次数按
+`requestId` 去重；用户消息按稳定 entry id 去重。多个持久化键保存同一份 transcript 时，
+再按首尾 entry 边界去重。当前快照没有 Token、模型或成本字段，这三项保持未知，文本长度
+不会参与 Token 估算。
+
 **Qoder** — `inputTokens` / `outputTokens` 目前全为 0,仅 `durationMs` 和 `contextUsageRatio` 有值。
 
 **OpenClaw** — Session JSONL 的 `message.usage` 提供输入、输出、缓存读写和成本；
@@ -123,7 +168,7 @@ Dashboard、Wrapped 或项目 token 总量。
 
 两种公式,取决于 `input` 是否包含缓存:
 
-### Claude / Grok Build / Hermes / Pi / WorkBuddy / OpenCode / Qwen Code(input 不含缓存)
+### Claude / Grok Build / Hermes / Pi / WorkBuddy / WorkBuddy Intl. / OpenCode / Qwen Code(input 不含缓存)
 
 ```
 hit% = cache_read / (cache_read + cache_write + input) × 100
@@ -296,6 +341,49 @@ Codex 刷新登录 Token 后立即重试。
 1. 始终优先解析本地日志
 2. 仅当用户开启实时查询时，才请求账单接口覆盖为最新值
 3. 失败时回退到本地日志或短缓存，不报错
+
+### Grok Bot
+
+本地活动采集不访问网络。官方用量查询默认关闭；开启并明确授权后，Tokei 优先通过
+macOS Keychain 读取 Grok Bot 的 Electron Safe Storage 密钥，在内存中解密当前账号的
+短期 access token，再请求固定的官方 Sand usage status 与 usage-events 地址。用量请求固定
+`clientType=sand`，只统计 Grok Bot 产生的 Token、缓存、模型和成本，避免混入同账号的 Cursor
+调用；账号标识、邮箱、会话内容和登录 Token 都不会写入 Tokei 输出。常规刷新使用禁止弹窗的
+Keychain 查询，授权失效时静默降级。成功结果缓存 5 分钟，失败时最多沿用 1 小时缓存。首次授权
+会由新进程再次验证长期权限，只有系统弹窗选择“始终允许”后才显示授权成功。没有授权时仍可
+回退到可复用的 Cursor 登录态，本地会话活动始终正常显示。
+
+开启多设备同步时，官方 Token、模型、费用和额度汇总随快照同步。合并时只采用更新时间最新的
+账号快照，不对各设备的账号总量求和；本地会话活动仍按设备正常累加。
+额度过期不会删除已采集的用量。Token、模型和费用按日期持久化，新的成功查询按日覆盖更新，历史日期继续保留。
+
+### 千问办公（QwenWork）
+
+千问办公与 Qwen Code 是两个独立产品。本功能只读取额度，不参与 Qwen Code 的 token、成本或模型统计。
+
+查询默认**关闭**，可通过设置开启，也可使用环境变量：
+
+- `~/.tokei/config.json` 中 `qwenwork_quota_enabled: true`
+- `TOKEI_QWENWORK_QUOTA=1` 开启；`TOKEI_QWENWORK_QUOTA=0` 强制关闭
+
+开启后，Tokei 读取 `~/.qwenworkcn/mcp-adaptor.config`，并向其中限定为
+`http://127.0.0.1:<port>` 的地址发送 JSON-RPC `POST`：工具固定为 `qw_query`，参数固定为
+`{"key":"qwenwork.usage"}`。千问办公必须正在运行且已登录；本机 MCP 会由千问办公自行请求
+官方额度。Tokei 不读取或解密 `auth-v2.dat`，不读取浏览器 Cookie，也不自动启动客户端。
+为防止退出或切换账号后显示旧额度，Tokei 仅把 `.status.json` 的文件 generation 元数据纳入
+缓存标识，不读取其中的姓名、邮箱等账号资料；接口明确返回不可用时会删除旧额度缓存。
+
+额度口径：
+
+- `segments` 是套餐积分和加购积分的 canonical 明细；`planCredits`、`addOnCredits` alias
+  仅用于个人积分兼容，不能与 `segments` 重复相加；`sharedAddOnCredits` 只作为共享资源包 fallback
+- `aggregateRemainingPercent` 表示**剩余百分比**，允许为 `null`；缺失时展示绝对积分，不反推已用百分比
+- `total=0` 且 `remaining>0` 是合法的未知总额状态，例如 `total=0, remaining=2100` 应显示
+  `2,100` 剩余积分
+- `sharedResourcePackage` 单独展示，不并入个人套餐/加购积分余额
+- 结果使用短缓存降低查询频率；实时查询失败时可显示标记为缓存来源的最近结果
+
+千问办公首版只有绝对积分时不加入以百分比为口径的菜单栏额度源，额度在独立卡片展示。
 
 ### Qoder(credit)
 

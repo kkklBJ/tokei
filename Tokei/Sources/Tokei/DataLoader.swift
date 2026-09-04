@@ -23,31 +23,16 @@ final class DataLoader {
         return userScript
     }()
 
+    private static let lastUsageURL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".tokei/last_usage.json")
+
     private static func syncToUserDir(from resourceDir: String) {
         let dest = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".tokei")
-        try? FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
-        let markerPath = dest.appendingPathComponent("script.version").path
-        let bundledTag = Updater.releaseTag
-        for name in ["usage.30s.py", "pricing.json", "pricing_overrides.json"] {
-            let src = (resourceDir as NSString).appendingPathComponent(name)
-            let dst = dest.appendingPathComponent(name).path
-            guard FileManager.default.fileExists(atPath: src) else { continue }
-            if name == "usage.30s.py" {
-                // 只升不降:旧版 app 启动不得用旧脚本覆盖新版脚本
-                if FileManager.default.fileExists(atPath: dst),
-                   let recorded = try? String(contentsOfFile: markerPath, encoding: .utf8)
-                       .trimmingCharacters(in: .whitespacesAndNewlines),
-                   !recorded.isEmpty,
-                   UpdateSecurity.isNewerVersion(recorded, than: bundledTag) {
-                    continue
-                }
-                try? FileManager.default.removeItem(atPath: dst)
-                try? FileManager.default.copyItem(atPath: src, toPath: dst)
-                try? bundledTag.write(toFile: markerPath, atomically: true, encoding: .utf8)
-            } else if !FileManager.default.fileExists(atPath: dst) {
-                try? FileManager.default.copyItem(atPath: src, toPath: dst)
-            }
-        }
+        CollectorScriptInstaller.sync(
+            resourceDir: resourceDir,
+            userDir: dest,
+            bundledRelease: Updater.releaseTag
+        )
     }
 
     // 首次全量定位 /usage，之后只检查变化项并复用最近一次有效候选。
@@ -90,11 +75,23 @@ final class DataLoader {
     private static let claudeQuotaFullScanInterval = 6 * 60 * 60
     private static let claudeQuotaRetryScanInterval = 5 * 60
     private static let claudeCacheFileLimit = 16 * 1024 * 1024
+    private static let claudeQuotaScanLock = NSLock()
     private static let zstdMagic = Data([0x28, 0xb5, 0x2f, 0xfd])
+    private static let deepSeekPreparationLock = NSLock()
+    private static let deepSeekMaxDecompressedSize = 2 * 1024 * 1024 * 1024
+
+    private struct DeepSeekSourceSignature: Codable, Equatable {
+        var modified: TimeInterval
+        var size: Int
+    }
 
     private static var claudeQuotaStateURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".tokei/claude_quota_swift_cache.json")
+    }
+
+    private static var claudeCLIQuotaEnabled: Bool {
+        UserDefaults.standard.object(forKey: "claudeCLIQuotaEnabled") as? Bool ?? false
     }
 
     private static func claudeCacheRecords() -> [ClaudeCacheRecord] {
@@ -210,6 +207,8 @@ final class DataLoader {
     }
 
     static func scanClaudeQuota(now: Date = Date()) -> [String: Any]? {
+        claudeQuotaScanLock.lock()
+        defer { claudeQuotaScanLock.unlock() }
         let nowEpoch = Int(now.timeIntervalSince1970)
         let records = claudeCacheRecords()
         var recordsByPath: [String: ClaudeCacheRecord] = [:]
@@ -254,7 +253,7 @@ final class DataLoader {
             }
         }
 
-        return finishClaudeQuotaScan(
+        let desktopQuota = finishClaudeQuotaScan(
             records: records,
             original: original,
             state: &state,
@@ -264,6 +263,21 @@ final class DataLoader {
             initialScan: initialScan,
             nowEpoch: nowEpoch
         )
+        guard claudeCLIQuotaEnabled,
+              !hasFreshClaudeCoreQuota(desktopQuota),
+              let cliQuota = ClaudeCLIQuotaBridge.fetchQuota(now: now) else {
+            return desktopQuota
+        }
+        guard let desktopQuota else { return cliQuota }
+        let desktopUpdated = intValue(desktopQuota["q_updated"]) ?? 0
+        let cliUpdated = intValue(cliQuota["q_updated"]) ?? 0
+        return cliUpdated >= desktopUpdated ? cliQuota : desktopQuota
+    }
+
+    private static func hasFreshClaudeCoreQuota(_ quota: [String: Any]?) -> Bool {
+        guard let quota else { return false }
+        return numberValue(quota["q5"]) != nil && quota["q5_stale"] as? Bool != true &&
+            numberValue(quota["q7"]) != nil && quota["q7_stale"] as? Bool != true
     }
 
     private static func finishClaudeQuotaScan(
@@ -335,6 +349,123 @@ final class DataLoader {
         return Data(dst.prefix(ret))
     }
 
+    private static func zstdDecompressFrames(_ src: Data) -> Data? {
+        guard !src.isEmpty else { return Data() }
+        var output = Data()
+        var offset = 0
+        let succeeded = src.withUnsafeBytes { srcPtr -> Bool in
+            guard let base = srcPtr.baseAddress else { return false }
+            while offset < src.count {
+                let frame = base.advanced(by: offset)
+                let remaining = src.count - offset
+                let frameSize = ZSTD_findFrameCompressedSize(frame, remaining)
+                guard ZSTD_isError(frameSize) == 0, frameSize > 0, frameSize <= remaining else {
+                    return false
+                }
+                let contentSize = ZSTD_getFrameContentSize(frame, frameSize)
+                let destinationSize: Int
+                if contentSize == ZSTD_CONTENTSIZE_ERROR {
+                    return false
+                } else if contentSize == ZSTD_CONTENTSIZE_UNKNOWN {
+                    destinationSize = min(max(frameSize * 64, 64 * 1024), 64 * 1024 * 1024)
+                } else {
+                    guard contentSize <= UInt64(deepSeekMaxDecompressedSize) else { return false }
+                    destinationSize = max(Int(contentSize), 1)
+                }
+                guard output.count <= deepSeekMaxDecompressedSize - destinationSize else { return false }
+                var destination = [UInt8](repeating: 0, count: destinationSize)
+                let written = ZSTD_decompress(&destination, destinationSize, frame, frameSize)
+                guard ZSTD_isError(written) == 0 else { return false }
+                output.append(contentsOf: destination.prefix(written))
+                offset += frameSize
+            }
+            return offset == src.count
+        }
+        return succeeded ? output : nil
+    }
+
+    private static var deepSeekCacheURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".tokei/cache/dsh-sessions", isDirectory: true)
+    }
+
+    @discardableResult
+    private static func prepareDeepSeekHarnessSessions() -> URL {
+        deepSeekPreparationLock.lock()
+        defer { deepSeekPreparationLock.unlock() }
+
+        let fm = FileManager.default
+        let sourceRoot: URL
+        if let configured = ProcessInfo.processInfo.environment["TOKEI_DSH_DIR"],
+           !configured.isEmpty {
+            sourceRoot = URL(fileURLWithPath: NSString(string: configured).expandingTildeInPath,
+                             isDirectory: true).standardizedFileURL
+        } else {
+            sourceRoot = fm.homeDirectoryForCurrentUser
+                .appendingPathComponent(".dsh/sessions", isDirectory: true).standardizedFileURL
+        }
+        let outputRoot = deepSeekCacheURL
+        try? fm.createDirectory(at: outputRoot, withIntermediateDirectories: true,
+                                attributes: [.posixPermissions: 0o700])
+        let manifestURL = outputRoot.appendingPathComponent("manifest.json")
+        let decoder = JSONDecoder()
+        let oldManifest = (try? Data(contentsOf: manifestURL)).flatMap {
+            try? decoder.decode([String: DeepSeekSourceSignature].self, from: $0)
+        } ?? [:]
+
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey]
+        guard let enumerator = fm.enumerator(at: sourceRoot, includingPropertiesForKeys: Array(keys),
+                                             options: [.skipsHiddenFiles]) else {
+            return outputRoot
+        }
+        var manifest: [String: DeepSeekSourceSignature] = [:]
+        let sourcePrefix = sourceRoot.path.hasSuffix("/") ? sourceRoot.path : sourceRoot.path + "/"
+        for case let source as URL in enumerator {
+            guard source.path.hasSuffix(".jsonl.zstd"),
+                  source.standardizedFileURL.path.hasPrefix(sourcePrefix),
+                  let values = try? source.resourceValues(forKeys: keys),
+                  values.isRegularFile == true,
+                  let modified = values.contentModificationDate,
+                  let size = values.fileSize else { continue }
+            let relative = String(source.standardizedFileURL.path.dropFirst(sourcePrefix.count))
+            let outputRelative = String(relative.dropLast(".zstd".count))
+            let output = outputRoot.appendingPathComponent(outputRelative).standardizedFileURL
+            guard output.path.hasPrefix(outputRoot.path + "/") else { continue }
+            let signature = DeepSeekSourceSignature(modified: modified.timeIntervalSince1970, size: size)
+            if oldManifest[relative] == signature, fm.fileExists(atPath: output.path) {
+                manifest[relative] = signature
+                continue
+            }
+            guard let compressed = try? Data(contentsOf: source, options: .mappedIfSafe),
+                  let decompressed = zstdDecompressFrames(compressed) else {
+                continue
+            }
+            do {
+                try fm.createDirectory(at: output.deletingLastPathComponent(),
+                                       withIntermediateDirectories: true,
+                                       attributes: [.posixPermissions: 0o700])
+                try decompressed.write(to: output, options: .atomic)
+                try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: output.path)
+                manifest[relative] = signature
+            } catch {
+                continue
+            }
+        }
+
+        for relative in oldManifest.keys where manifest[relative] == nil {
+            let outputRelative = String(relative.dropLast(".zstd".count))
+            let output = outputRoot.appendingPathComponent(outputRelative).standardizedFileURL
+            if output.path.hasPrefix(outputRoot.path + "/") {
+                try? fm.removeItem(at: output)
+            }
+        }
+        if manifest != oldManifest, let data = try? JSONEncoder().encode(manifest) {
+            try? data.write(to: manifestURL, options: .atomic)
+            try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: manifestURL.path)
+        }
+        return outputRoot
+    }
+
     private static func isoToEpoch(_ s: String?) -> Int? {
         guard let s = s else { return nil }
         let fmt = ISO8601DateFormatter()
@@ -347,6 +478,40 @@ final class DataLoader {
 
     static func loadSync() -> Usage? { runScript() }
 
+    static func loadCachedUsage() -> Usage? {
+        var candidates = [lastUsageURL]
+        if let config = SyncManager.loadConfig() {
+            let deviceID = SyncManager.normalizedDeviceID(config.device_id)
+            let isSafeDeviceID = !deviceID.isEmpty && deviceID != "." && deviceID != ".." &&
+                deviceID.count <= 128 && !deviceID.unicodeScalars.contains {
+                    $0.value < 32 || $0.value == 47 || $0.value == 92 || $0.value == 0
+                }
+            if isSafeDeviceID {
+                candidates.append(
+                    URL(fileURLWithPath: SyncManager.resolvedSyncDir(config), isDirectory: true)
+                        .appendingPathComponent(deviceID)
+                        .appendingPathExtension("json")
+                )
+            }
+        }
+
+        for url in candidates {
+            guard let data = try? Data(contentsOf: url),
+                  var raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { continue }
+            for key in raw.keys where key.hasPrefix("_") { raw.removeValue(forKey: key) }
+            if var claude = raw["claude"] as? [String: Any] {
+                normalizeClaudeQuota(&claude)
+                raw["claude"] = claude
+            }
+            guard let cleaned = try? JSONSerialization.data(withJSONObject: raw),
+                  let usage = try? JSONDecoder().decode(Usage.self, from: cleaned)
+            else { continue }
+            return usage
+        }
+        return nil
+    }
+
     static func load(_ completion: @escaping (Usage?) -> Void) {
         DispatchQueue.global(qos: .utility).async {
             let usage = runScript()
@@ -355,7 +520,8 @@ final class DataLoader {
     }
 
     static func runScript(args: [String] = ["--json", "--no-sync-snapshot"]) -> Usage? {
-        let result = runScriptRaw(args: args, timeout: 90)
+        // Large first-time indexes may need several minutes; cached UI remains available.
+        let result = runScriptRaw(args: args, timeout: 600)
         guard !result.timedOut, result.exitCode == 0 else {
             fputs("Tokei script failed: exit=\(result.exitCode) timeout=\(result.timedOut)\n\(result.stderr)\n", stderr)
             return nil
@@ -391,10 +557,28 @@ final class DataLoader {
                 raw["claude"] = claude
             }
             let cleaned = try JSONSerialization.data(withJSONObject: raw)
-            return try JSONDecoder().decode(Usage.self, from: cleaned)
+            let usage = try JSONDecoder().decode(Usage.self, from: cleaned)
+            persistCachedUsage(cleaned)
+            return usage
         } catch {
             fputs("Tokei decode error: \(error)\n", stderr)
             return nil
+        }
+    }
+
+    private static func persistCachedUsage(_ data: Data) {
+        do {
+            try FileManager.default.createDirectory(
+                at: lastUsageURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: lastUsageURL, options: .atomic)
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: lastUsageURL.path
+            )
+        } catch {
+            fputs("Tokei usage cache write failed: \(error)\n", stderr)
         }
     }
 
@@ -425,6 +609,17 @@ final class DataLoader {
         }
     }
 
+    private static func nativeClaudeQuotaJSON() -> String? {
+        guard let quota = scanClaudeQuota(),
+              JSONSerialization.isValidJSONObject(quota),
+              let data = try? JSONSerialization.data(
+                  withJSONObject: quota,
+                  options: [.sortedKeys]
+              )
+        else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
     static func writeSyncSnapshot(_ completion: @escaping (Bool) -> Void) {
         DispatchQueue.global(qos: .utility).async {
             let result = runScriptRaw(args: ["--write-sync"], timeout: 120)
@@ -445,9 +640,12 @@ final class DataLoader {
 
     private static let syncSnapshotPython = """
     import importlib.util
+    import os
     import sys
 
-    script_path, device_id, sync_dir = sys.argv[1:4]
+    script_path, device_id, sync_dir, claude_quota = sys.argv[1:5]
+    if claude_quota:
+        os.environ["TOKEI_CLAUDE_QUOTA_JSON"] = claude_quota
     spec = importlib.util.spec_from_file_location("tokei_usage_sync", script_path)
     if spec is None or spec.loader is None:
         raise SystemExit(1)
@@ -462,22 +660,30 @@ final class DataLoader {
     """
 
     static func syncSnapshotCommand(deviceID: String, syncDir: String) -> SyncCommand {
+        let claudeQuota = nativeClaudeQuotaJSON() ?? ""
         if pythonPath == "/usr/bin/env" {
             return SyncCommand(
                 executable: "/usr/bin/env",
-                arguments: ["python3", "-c", syncSnapshotPython, scriptPath, deviceID, syncDir],
+                arguments: [
+                    "python3", "-c", syncSnapshotPython,
+                    scriptPath, deviceID, syncDir, claudeQuota,
+                ],
                 supervisorExecutable: "/usr/bin/env",
                 supervisorArguments: ["python3"]
             )
         }
         return SyncCommand(
             executable: pythonPath,
-            arguments: ["-c", syncSnapshotPython, scriptPath, deviceID, syncDir],
+            arguments: [
+                "-c", syncSnapshotPython,
+                scriptPath, deviceID, syncDir, claudeQuota,
+            ],
             supervisorExecutable: pythonPath
         )
     }
 
     static func runScriptRaw(args: [String] = ["--json", "--no-sync-snapshot"], timeout: TimeInterval = 8) -> ScriptResult {
+        let deepSeekSessions = prepareDeepSeekHarnessSessions()
         let proc = Process()
         if pythonPath == "/usr/bin/env" {
             proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -486,6 +692,19 @@ final class DataLoader {
             proc.executableURL = URL(fileURLWithPath: pythonPath)
             proc.arguments = [scriptPath] + args
         }
+        var environment = ProcessInfo.processInfo.environment
+        environment["TOKEI_DSH_DECOMPRESSED_DIR"] = deepSeekSessions.path
+        environment["TOKEI_GROK_BOT_HELPER"] =
+            GrokBotHelperManager.resolvedHelperURL()?.path ?? Bundle.main.executablePath
+        if let json = nativeClaudeQuotaJSON() {
+            environment["TOKEI_CLAUDE_QUOTA_JSON"] = json
+        } else {
+            environment.removeValue(forKey: "TOKEI_CLAUDE_QUOTA_JSON")
+        }
+        for (key, value) in ProviderCredentialStore.environmentOverrides() {
+            environment[key] = value
+        }
+        proc.environment = environment
         let outPipe = Pipe()
         let errPipe = Pipe()
         proc.standardOutput = outPipe

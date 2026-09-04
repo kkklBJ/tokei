@@ -36,7 +36,12 @@ enum Theme {
     static let claude = Color(red: 0.92, green: 0.52, blue: 0.40)   // 柔珊瑚
     static let codex  = Color(red: 0.42, green: 0.68, blue: 0.98)   // 天青
     static let gemini = Color(red: 0.62, green: 0.52, blue: 0.92)   // 薰衣草
+    static let cursor = Color(red: 0.72, green: 0.77, blue: 0.90)   // 光标银蓝
+    static let zed = Color(red: 0.93, green: 0.38, blue: 0.30)      // Zed 珊瑚红
+    static let sub2api = Color(red: 0.18, green: 0.78, blue: 0.85)  // API 青
+    static let zai = Color(red: 0.38, green: 0.67, blue: 0.98)      // GLM 蓝
     static let grok   = Color(red: 0.65, green: 0.68, blue: 0.75)   // 冷灰银
+    static let grokBot = Color(red: 0.95, green: 0.40, blue: 0.64)  // 星莓红
     static let qoder  = Color(red: 0.90, green: 0.75, blue: 0.35)   // 琥珀金
     static let qoderwork = Color(red: 0.75, green: 0.65, blue: 0.30)  // 暗琥珀
     static let qodercli = Color(red: 0.96, green: 0.84, blue: 0.45)  // 亮琥珀
@@ -45,9 +50,14 @@ enum Theme {
     static let mimocode = Color(red: 0.95, green: 0.50, blue: 0.26) // 暖橙
     static let openclaw = Color(red: 0.85, green: 0.45, blue: 0.68) // 玫红
     static let pi = Color(red: 0.74, green: 0.58, blue: 0.95)       // 柔紫
+    static let primeAgent = Color(red: 0.96, green: 0.58, blue: 0.28) // 活力橙
     static let workbuddy = Color(red: 0.25, green: 0.78, blue: 0.72) // 青绿
+    static let workbuddyAI = Color(red: 0.36, green: 0.66, blue: 0.94) // 国际版蓝
+    static let deepseekHarness = Color(red: 0.18, green: 0.58, blue: 0.94) // 深海蓝
     static let opencode = Color(red: 0.55, green: 0.75, blue: 0.90) // 天蓝灰
     static let qwencode = Color(red: 0.48, green: 0.55, blue: 0.95) // 靛蓝
+    static let qwenwork = Color(red: 0.24, green: 0.72, blue: 0.68) // 千问青
+    static let kimicode = Color(red: 0.20, green: 0.78, blue: 0.66) // 月石青
 
     static let panelWidth: CGFloat = 322
     static let cardRadius: CGFloat = 16
@@ -170,7 +180,7 @@ struct RingGauge: View {
             }
         }
         .frame(width: size, height: size)
-        .animation(.easeOut(duration: 0.5), value: value)
+        .animation(.easeOut(duration: 0.18), value: value)
     }
 }
 
@@ -188,7 +198,7 @@ struct MiniBar: View {
             }
         }
         .frame(height: 5)
-        .animation(.easeOut(duration: 0.45), value: value)
+        .animation(.easeOut(duration: 0.18), value: value)
     }
 }
 
@@ -271,7 +281,7 @@ struct RingMetricCell: View {
             }
             Spacer(minLength: 0)
         }
-        .animation(.easeOut(duration: 0.5), value: value)
+        .animation(.easeOut(duration: 0.18), value: value)
     }
 }
 
@@ -297,11 +307,19 @@ struct CostHeadline: View {
 // 自定义滑动分段控件(替代原生 segmented),选中态滑动高亮。
 struct SegmentedTabs: View {
     @Binding var sel: RangeKey
+    // 高亮跟着 sel 走会等数据重载完才动,点下去像没反应。本地状态先动,再回同步。
+    @State private var highlighted: RangeKey
     @Namespace private var ns
+
+    init(sel: Binding<RangeKey>) {
+        _sel = sel
+        _highlighted = State(initialValue: sel.wrappedValue)
+    }
+
     var body: some View {
         HStack(spacing: 2) {
             ForEach(RangeKey.displayCases) { k in
-                let on = k == sel
+                let on = k == highlighted
                 Text(k.label)
                     .font(.system(size: Theme.fontSize(12), weight: on ? .semibold : .regular))
                     .foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
@@ -320,7 +338,11 @@ struct SegmentedTabs: View {
                     }
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { sel = k }
+                        guard sel != k else { return }
+                        sel = k
+                        withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                            highlighted = k
+                        }
                     }
             }
         }
@@ -329,6 +351,10 @@ struct SegmentedTabs: View {
             RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .fill(Color.primary.opacity(0.06))
         )
+        .onChange(of: sel) { value in
+            guard highlighted != value else { return }
+            highlighted = value
+        }
     }
 }
 

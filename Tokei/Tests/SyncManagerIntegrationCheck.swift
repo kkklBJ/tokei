@@ -53,6 +53,7 @@ private enum SyncManagerIntegrationCheck {
                 try? FileManager.default.removeItem(at: root)
             }
         }
+        try testQwenWorkAbsoluteQuotaDecoding()
         try testForeignRebaseStopsBeforeSnapshotOrCommit()
         try testDetachedHeadStopsBeforeSnapshot()
         try testSecondTransactionCannotEnterLockedRepository()
@@ -69,7 +70,38 @@ private enum SyncManagerIntegrationCheck {
         try testSaveConfigRejectsDeviceIdentityChangeInIsolatedHome()
         try testInheritedGitDirectoryCannotRedirectSync()
         try testPeerLoaderReportsBadFilesIndependently()
-        print("SyncManager integration checks passed: 16")
+        print("SyncManager integration checks passed: 17")
+    }
+
+    private static func testQwenWorkAbsoluteQuotaDecoding() throws {
+        let payload = #"""
+        {
+          "available": true,
+          "remaining": 2100,
+          "remaining_pct": null,
+          "exceeded": false,
+          "is_team": false,
+          "segments": [{
+            "id": "plan",
+            "kind": "plan_credits",
+            "total": 0,
+            "used": 0,
+            "remaining": 2100,
+            "percentage_used": null,
+            "unit": "credits"
+          }],
+          "source": "mcp",
+          "updated": 1786650000,
+          "stale": false
+        }
+        """#
+        let quota = try JSONDecoder().decode(QwenWorkQuota.self, from: Data(payload.utf8))
+        try expect(quota.available, "QwenWork absolute quota did not decode as available")
+        try expect(quota.remaining == 2100, "QwenWork remaining credits changed during decode")
+        try expect(quota.remaining_pct == nil, "missing QwenWork percentage became a value")
+        try expect(quota.segments.count == 1 && quota.segments[0].total == 0
+                       && quota.segments[0].percentage_used == nil,
+                   "QwenWork total=0 absolute-balance contract changed")
     }
 
     private static func testForeignRebaseStopsBeforeSnapshotOrCommit() throws {

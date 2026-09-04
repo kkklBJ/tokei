@@ -33,13 +33,20 @@ curl -sL https://raw.githubusercontent.com/<user>/tokei-sync/main/install.sh | b
 - Claude Code (`~/.claude/`)
 - Codex (`~/.codex/`)
 - Gemini CLI (`~/.gemini/`)
-- Grok CLI (`~/.grok/`)
-- Qoder / QoderWork
+- Grok Build (`~/.grok/`)
+- Qoder Desktop (`~/Library/Application Support/Qoder/`)
+- QoderWork (`~/Library/Application Support/QoderWork/`)
+- Qoder CLI (`~/.qoder/projects/`)
 - Hermes (`~/.hermes/`)
+- ZCode (`~/.zcode/cli/db/db.sqlite`)
+- MiMoCode (`~/.local/share/mimocode/` 或 `~/Library/Application Support/mimocode/`)
 - OpenClaw (`~/.openclaw/`)
 - Pi Coding Agent CLI (`~/.pi/agent/sessions/`)
+- WorkBuddy (`~/.workbuddy/projects/`)
+- DeepSeek Harness (`~/.dsh/sessions/`)
 - OpenCode (`~/.local/share/opencode/`)
 - Qwen Code (`~/.qwen/`)
+- Kimi Code (`${KIMI_CODE_HOME:-~/.kimi-code}/`，兼容旧版 `${KIMI_SHARE_DIR:-~/.kimi}/`)
 
 ## 卸载
 

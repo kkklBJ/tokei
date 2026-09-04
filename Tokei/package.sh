@@ -9,17 +9,50 @@ if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     exit 1
 fi
 
+# 只记录本次打包日期，不把它混入正式版本号或 CFBundleVersion。
+# 允许测试和可复现打包显式指定日期。
+BUILD_DATE="${TOKEI_BUILD_DATE:-$(date '+%Y.%m.%d')}"
+if [[ ! "$BUILD_DATE" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}$ ]]; then
+    echo "构建日期格式无效，应为 YYYY.MM.DD: $BUILD_DATE" >&2
+    exit 1
+fi
+
+# Command Line Tools 27 的 SwiftUI SDK 会引用 SwiftUIMacros.StateMacro，
+# 但部分 CLT 安装并未包含对应插件。此时使用同一工具链自带的 26.x SDK。
+if [[ -z "${SDKROOT:-}" ]]; then
+    DEVELOPER_PATH="$(xcode-select -p 2>/dev/null || true)"
+    DEFAULT_SDK="$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)"
+    SWIFTUI_CORE_MODULES="$DEFAULT_SDK/System/Library/Frameworks/SwiftUICore.framework/Versions/A/Modules"
+    SWIFTUI_MACROS_PLUGIN="$DEVELOPER_PATH/usr/lib/swift/host/plugins/libSwiftUIMacros.dylib"
+
+    if [[ "$DEVELOPER_PATH" == */CommandLineTools ]] \
+        && [[ -d "$SWIFTUI_CORE_MODULES" ]] \
+        && grep -Rqs 'type: "StateMacro"' "$SWIFTUI_CORE_MODULES" \
+        && [[ ! -f "$SWIFTUI_MACROS_PLUGIN" ]]; then
+        COMPATIBLE_SDK="$DEVELOPER_PATH/SDKs/MacOSX26.sdk"
+        if [[ ! -d "$COMPATIBLE_SDK" ]]; then
+            echo "当前 Command Line Tools 缺少 SwiftUIMacros，请安装完整 Xcode 后重试" >&2
+            exit 1
+        fi
+        export SDKROOT="$COMPATIBLE_SDK"
+        echo "Command Line Tools 缺少 SwiftUIMacros，使用兼容 SDK: $SDKROOT"
+    fi
+fi
+
 swift build -c release
 
 APP="Tokei.app"
 BIN="$(swift build -c release --show-bin-path)/Tokei"
+GROK_BOT_HELPER="$(swift build -c release --show-bin-path)/TokeiGrokBotHelper"
 PROJ_DIR="$(dirname "$(pwd)")"
 
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources"
 
 # 二进制
 cp "$BIN" "$APP/Contents/MacOS/Tokei"
+cp "$GROK_BOT_HELPER" "$APP/Contents/Helpers/TokeiGrokBotHelper"
+chmod 755 "$APP/Contents/Helpers/TokeiGrokBotHelper"
 
 # 打包 Python 脚本和配置到 Resources
 cp "$PROJ_DIR/usage.30s.py" "$APP/Contents/Resources/"
@@ -40,6 +73,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleIdentifier</key><string>com.tokei.app</string>
     <key>CFBundleVersion</key><string>${VERSION}</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
+    <key>TokeiBuildDate</key><string>${BUILD_DATE}</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleExecutable</key><string>Tokei</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
@@ -50,7 +84,34 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-codesign --force --deep --sign - "$APP"
+# A stable local signing identity keeps macOS Keychain ACLs valid across
+# rebuilds. Prefer Developer ID, then Apple Development; CI can force ad-hoc
+# signing with TOKEI_CODESIGN_IDENTITY=-.
+# 注意：自动探测只服务本地开发。release.sh 固定传 TOKEI_CODESIGN_IDENTITY=-,
+# 发布产物不会带上构建机上的个人证书。
+CODESIGN_IDENTITY="${TOKEI_CODESIGN_IDENTITY:-auto}"
+if [ "$CODESIGN_IDENTITY" = "auto" ]; then
+    CODESIGN_IDENTITY=""
+    if command -v security &>/dev/null; then
+        IDENTITIES="$(security find-identity -v -p codesigning 2>/dev/null || true)"
+        CODESIGN_IDENTITY="$(echo "$IDENTITIES" \
+            | sed -nE 's/^[[:space:]]*[0-9]+\) [0-9A-F]+ "(Developer ID Application:[^"]+)".*/\1/p' \
+            | head -n 1)"
+        if [ -z "$CODESIGN_IDENTITY" ]; then
+            CODESIGN_IDENTITY="$(echo "$IDENTITIES" \
+                | sed -nE 's/^[[:space:]]*[0-9]+\) [0-9A-F]+ "(Apple Development:[^"]+)".*/\1/p' \
+                | head -n 1)"
+        fi
+    fi
+    [ -n "$CODESIGN_IDENTITY" ] || CODESIGN_IDENTITY="-"
+fi
+
+if [ "$CODESIGN_IDENTITY" = "-" ]; then
+    echo "未找到稳定签名证书，使用 ad-hoc 签名；后续重编译可能需要重新保存 Provider 密钥"
+else
+    echo "使用代码签名: $CODESIGN_IDENTITY"
+fi
+codesign --force --deep --sign "$CODESIGN_IDENTITY" "$APP"
 codesign --verify --deep --strict "$APP"
 xattr -cr "$APP" 2>/dev/null || true
 echo "Built: $(pwd)/$APP"
@@ -100,15 +161,25 @@ INSTALL
     rm -rf "$MOUNT_DIR"
 
     # 挂载并用 AppleScript 设置窗口样式
-    DEVICE=$(hdiutil attach -readwrite -noverify "$TMP_DMG" | grep '/Volumes/Tokei' | awk '{print $1}')
+    ATTACH_OUTPUT="$(hdiutil attach -readwrite -noverify "$TMP_DMG")"
+    DEVICE="$(echo "$ATTACH_OUTPUT" | awk '/^\/dev\/disk/ {print $1; exit}')"
+    VOLUME_PATH="$(echo "$ATTACH_OUTPUT" | sed -n 's|^.*\(/Volumes/.*\)$|\1|p' | head -n 1)"
+    if [ -z "$DEVICE" ]; then
+        echo "无法识别已挂载 DMG 的设备" >&2
+        exit 1
+    fi
     sleep 1
 
-    # 隐藏 dot 文件夹
-    SetFile -a V /Volumes/Tokei/.background 2>/dev/null || true
-    SetFile -a V /Volumes/Tokei/.fseventsd 2>/dev/null || true
+    # 新版 hdiutil 可能只附加设备而不返回 /Volumes 挂载点；窗口装饰是可选项。
+    if [ -n "$VOLUME_PATH" ] && [ -d "$VOLUME_PATH" ]; then
+        [ -d "$VOLUME_PATH/.background" ] \
+            && SetFile -a V "$VOLUME_PATH/.background" 2>/dev/null || true
+        [ -d "$VOLUME_PATH/.fseventsd" ] \
+            && SetFile -a V "$VOLUME_PATH/.fseventsd" 2>/dev/null || true
+    fi
 
-    if [ -f "/Volumes/Tokei/.background/bg.png" ]; then
-        osascript <<'APPLE'
+    if [ -n "$VOLUME_PATH" ] && [ -f "$VOLUME_PATH/.background/bg.png" ]; then
+        osascript <<'APPLE' || true
 tell application "Finder"
     tell disk "Tokei"
         open
@@ -133,7 +204,22 @@ APPLE
     fi
 
     sync
-    hdiutil detach "$DEVICE" 2>/dev/null
+    if command -v diskutil &>/dev/null; then
+        EJECT_COMMAND=(diskutil eject "$DEVICE")
+    else
+        EJECT_COMMAND=(hdiutil detach "$DEVICE")
+    fi
+    EJECTED=0
+    for _attempt in 1 2 3 4 5; do
+        sleep 1
+        if "${EJECT_COMMAND[@]}" >/dev/null 2>&1; then
+            EJECTED=1
+            break
+        fi
+    done
+    if [ "$EJECTED" -ne 1 ]; then
+        hdiutil detach -force "$DEVICE" 2>/dev/null
+    fi
     sleep 1
 
     # 转为压缩只读 DMG

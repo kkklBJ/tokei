@@ -11,29 +11,48 @@ struct PanelView: View {
     @State private var codexModelsOpen = false
     @State private var codexResetCardsOpen = false
     @State private var geminiModelsOpen = false
+    @State private var cursorModelsOpen = false
+    @State private var zaiModelsOpen = false
     @State private var grokModelsOpen = false
+    @State private var grokBotModelsOpen = false
+    @State private var hermesModelsOpen = false
     @State private var zcodeModelsOpen = false
     @State private var mimocodeModelsOpen = false
     @State private var piModelsOpen = false
+    @State private var primeAgentModelsOpen = false
     @State private var workBuddyModelsOpen = false
+    @State private var workBuddyAIModelsOpen = false
+    @State private var deepSeekHarnessModelsOpen = false
     @State private var openCodeModelsOpen = false
     @State private var qwenCodeModelsOpen = false
+    @State private var kimiCodeModelsOpen = false
+    @State private var openClawModelsOpen = false
     @State private var expandedModels: Set<String> = []
     @State private var mode: PanelMode = .cards
     @State private var trailProjects: [TrailProject]?
     enum PanelMode { case cards, quotaHistory, dashboard, projects, settings }
+    private enum ToolCardPresentation: Equatable {
+        case standard
+        case compactStatus
+    }
     private struct ToolCardItem: Identifiable {
         let id: String
         let name: String
         let visible: Bool
         let active: Bool
         let tint: Color
+        var presentation: ToolCardPresentation = .standard
         let content: AnyView
     }
     @AppStorage("showClaude") private var showClaude = true
     @AppStorage("showCodex") private var showCodex = true
     @AppStorage("showGemini") private var showGemini = true
+    @AppStorage("showCursor") private var showCursor = false
+    @AppStorage("showZed") private var showZed = false
+    @AppStorage("showSub2API") private var showSub2API = false
+    @AppStorage("showZai") private var showZai = false
     @AppStorage("showGrok") private var showGrok = true
+    @AppStorage("showGrokBot") private var showGrokBot = true
     @AppStorage("showQoderIde") private var showQoder = true
     @AppStorage("showQoderWork") private var showQoderWork = true
     @AppStorage("showQoderCli") private var showQoderCli = true
@@ -42,19 +61,53 @@ struct PanelView: View {
     @AppStorage("showMimoCode") private var showMimoCode = true
     @AppStorage("showOpenClaw") private var showOpenClaw = true
     @AppStorage("showPi") private var showPi = true
+    @AppStorage("showPrimeAgent") private var showPrimeAgent = true
     @AppStorage("showWorkBuddy") private var showWorkBuddy = true
+    @AppStorage("showWorkBuddyAI") private var showWorkBuddyAI = true
+    @AppStorage("showDeepSeekHarness") private var showDeepSeekHarness = true
     @AppStorage("showOpenCode") private var showOpenCode = true
     @AppStorage("showQwenCode") private var showQwenCode = true
+    @AppStorage("showQwenWork") private var showQwenWork = true
+    @AppStorage("showKimiCode") private var showKimiCode = true
     /// 默认关闭：Grok 额度只读本地日志；开启后才用登录凭据请求实时账单接口。
     @AppStorage("grokLiveQuotaEnabled") private var grokLiveQuotaEnabled = false
-    /// 菜单栏额度来源（与显示卡片独立）。Grok 默认关，避免新额度源抢占状态栏。
-    @AppStorage(MenuBarQuotaSource.claude.defaultsKey) private var menuBarQuotaClaude = true
-    @AppStorage(MenuBarQuotaSource.codex.defaultsKey) private var menuBarQuotaCodex = true
+    /// 默认关闭：显式授权后复用 Grok Bot 或 Cursor 登录态查询官方额度。
+    @AppStorage("grokBotQuotaEnabled") private var grokBotQuotaEnabled = false
+    /// 默认关闭：开启后仅查询千问办公桌面端暴露在本机回环地址上的额度接口。
+    @AppStorage("qwenWorkQuotaEnabled") private var qwenWorkQuotaEnabled = false
+    /// 默认关闭：仅在 Desktop 缓存不可用时复用 Claude Code CLI 登录态查询官方额度。
+    @AppStorage("claudeCLIQuotaEnabled") private var claudeCLIQuotaEnabled = false
+    /// 菜单栏额度来源（与显示卡片独立），每项是一个具体窗口。
+    /// 只有历史上就默认开的 Claude 5h 与 Codex 周保持默认开，其余窗口默认关，避免抢占状态栏。
+    @AppStorage(MenuBarQuotaSource.claude5h.defaultsKey) private var menuBarQuotaClaude5h = true
+    @AppStorage(MenuBarQuotaSource.claudeWeek.defaultsKey) private var menuBarQuotaClaudeWeek = false
+    @AppStorage(MenuBarQuotaSource.claudeFable.defaultsKey) private var menuBarQuotaClaudeFable = false
+    @AppStorage(MenuBarQuotaSource.codex5h.defaultsKey) private var menuBarQuotaCodex5h = false
+    @AppStorage(MenuBarQuotaSource.codexWeek.defaultsKey) private var menuBarQuotaCodexWeek = true
     @AppStorage(MenuBarQuotaSource.grok.defaultsKey) private var menuBarQuotaGrok = false
+    @State private var copyFeedback = false
+    @State private var copiedToolID: String?
+
+    private var toolVisibility: UsageToolVisibility {
+        UsageToolVisibility(
+            claude: showClaude, codex: showCodex, gemini: showGemini, grok: showGrok,
+            grokBot: showGrokBot,
+            qoder: showQoder, qoderwork: showQoderWork, qodercli: showQoderCli,
+            hermes: showHermes, zcode: showZcode, mimocode: showMimoCode,
+            openclaw: showOpenClaw, pi: showPi, primeAgent: showPrimeAgent,
+            workbuddy: showWorkBuddy, workbuddyAI: showWorkBuddyAI,
+            deepseekHarness: showDeepSeekHarness,
+            opencode: showOpenCode, qwencode: showQwenCode, kimicode: showKimiCode
+        )
+    }
 
     private var visibleCount: Int {
-        [showClaude, showCodex, showGemini, showGrok, showQoder, showQoderWork, showQoderCli, showHermes, showZcode, showMimoCode,
-         showOpenClaw, showPi, showWorkBuddy, showOpenCode, showQwenCode].filter { $0 }.count
+        [showClaude, showCodex, showGemini, showCursor, showZed, showSub2API, showZai,
+         showGrok, showGrokBot, showQoder, showQoderWork, showQoderCli, showHermes,
+         showZcode, showMimoCode,
+         showOpenClaw, showPi, showWorkBuddy, showWorkBuddyAI, showDeepSeekHarness,
+         showOpenCode, showQwenCode,
+         showQwenWork, showKimiCode, showPrimeAgent].filter { $0 }.count
     }
     private var hasMultipleDevices: Bool { store.syncEnabled && !store.peers.isEmpty }
     private var useWide: Bool { visibleCount > 2 }
@@ -202,10 +255,13 @@ struct PanelView: View {
                         Text("Tokei")
                             .font(.system(size: Theme.fontSize(15), weight: .bold, design: .rounded))
                             .tracking(0.5)
+                            .lineLimit(1)
                         Text("知度 · AI 用量")
                             .font(.system(size: Theme.fontSize(9)))
                             .foregroundStyle(Theme.tTertiary)
+                            .lineLimit(1)
                     }
+                    .fixedSize(horizontal: true, vertical: false)
                 }
                 .contentShape(Rectangle())
             }
@@ -290,28 +346,118 @@ struct PanelView: View {
 
     private func toolCards(for u: Usage) -> [ToolCardItem] {
         let cr = u.claude.ranges.get(sel), xr = u.codex.ranges.get(sel)
-        let gr = u.gemini.ranges.get(sel), kr = u.grok.ranges.get(sel)
+        let geminiDisplay = u.gemini.ranges.displayRange(for: sel)
+        let kr = u.grok.ranges.get(sel)
+        let grokBotDisplay: (key: RangeKey, range: QoderRange, usage: TokenUsageRange) = {
+            let selected = u.grokBot.ranges.get(sel)
+            let selectedUsage = u.grokBot.quota.usage?.ranges.get(sel) ?? TokenUsageRange()
+            if selected.sessions > 0 || selected.calls > 0 || selected.turns > 0 ||
+                selectedUsage.totalTokens > 0 || selectedUsage.requests > 0 {
+                return (sel, selected, selectedUsage)
+            }
+            for key in [RangeKey.today, .yesterday, .week, .lastWeek, .month, .year, .all]
+                where key != sel {
+                let candidate = u.grokBot.ranges.get(key)
+                let candidateUsage = u.grokBot.quota.usage?.ranges.get(key) ?? TokenUsageRange()
+                if candidate.sessions > 0 || candidate.calls > 0 || candidate.turns > 0 ||
+                    candidateUsage.totalTokens > 0 || candidateUsage.requests > 0 {
+                    return (key, candidate, candidateUsage)
+                }
+            }
+            return (sel, selected, selectedUsage)
+        }()
         let qr = u.qoder.ranges.get(sel), qwr = u.qoderwork.ranges.get(sel)
         let qclir = u.qodercli.ranges.get(sel)
         let hr = u.hermes.ranges.get(sel)
         let zr = u.zcode.ranges.get(sel), mr = u.mimocode.ranges.get(sel)
         let lr = u.openclaw.ranges.get(sel), pr = u.pi.ranges.get(sel)
-        let wr = u.workbuddy.ranges.get(sel), or = u.opencode.ranges.get(sel)
-        let qcr = u.qwencode.ranges.get(sel)
+        let par = u.prime_agent.ranges.get(sel)
+        let wr = u.workbuddy.ranges.get(sel), wair = u.workbuddyAI.ranges.get(sel)
+        let or = u.opencode.ranges.get(sel)
+        let dshr = u.deepseekHarness.ranges.get(sel)
+        let claudeQuotaState = SubscriptionQuotaState.resolve([
+            (value: u.claude.q5, stale: u.claude.q5_stale),
+            (value: u.claude.q7, stale: u.claude.q7_stale),
+            (value: u.claude.qf, stale: u.claude.qf_stale),
+        ])
+        let grokQuotaState = SubscriptionQuotaState.resolve([
+            (value: u.grok.pct, stale: u.grok.stale),
+        ])
+        let cursorUsage = u.cursor.usage?.ranges.get(sel) ?? TokenUsageRange()
+        let zaiUsage = u.zai.usage?.ranges.get(sel) ?? TokenUsageRange()
+        let qcr = u.qwencode.ranges.get(sel), kcr = u.kimicode.ranges.get(sel)
         return [
             ToolCardItem(id: "claude", name: "Claude", visible: showClaude,
                          active: cr.sessions > 0 || u.claude.q5 != nil ||
                              u.claude.q7 != nil || u.claude.qf != nil,
-                         tint: Theme.claude, content: AnyView(claudeBlock(u.claude, cr))),
+                         tint: Theme.claude,
+                         presentation: claudeQuotaState.shouldUseCompactCard(hasUsage: cr.sessions > 0)
+                             ? .compactStatus : .standard,
+                         content: AnyView(claudeBlock(u.claude, cr))),
             ToolCardItem(id: "codex", name: "Codex", visible: showCodex,
                          active: xr.sessions > 0 || u.codex.p5 != nil || u.codex.pw != nil ||
                              (u.codex.reset_cards?.count ?? 0) > 0,
                          tint: Theme.codex, content: AnyView(codexBlock(u.codex, xr))),
-            ToolCardItem(id: "gemini", name: "Gemini", visible: showGemini, active: gr.sessions > 0,
-                         tint: Theme.gemini, content: AnyView(geminiBlock(gr))),
+            ToolCardItem(id: "gemini", name: "Gemini", visible: showGemini,
+                         active: geminiDisplay.range.hasUsage || u.antigravity.available,
+                         tint: Theme.gemini,
+                         presentation: !geminiDisplay.range.hasUsage && u.antigravity.available
+                             ? .compactStatus : .standard,
+                         content: AnyView(geminiBlock(
+                            geminiDisplay.range,
+                            quota: u.antigravity,
+                            displayedRange: geminiDisplay.key
+                         ))),
+            ToolCardItem(id: "cursor", name: "Cursor", visible: showCursor,
+                         active: u.cursor.available || cursorUsage.totalTokens > 0,
+                         tint: Theme.cursor,
+                         presentation: cursorUsage.totalTokens > 0 ? .standard : .compactStatus,
+                         content: AnyView(providerQuotaBlock(
+                            "Cursor", quota: u.cursor, usage: cursorUsage,
+                            modelsOpen: $cursorModelsOpen, tint: Theme.cursor,
+                            setupHint: "请确认 Cursor.app 已登录；Tokei 会复用其本地登录态读取额度。"))),
+            ToolCardItem(id: "zed", name: "Zed", visible: showZed, active: showZed,
+                         tint: Theme.zed, presentation: .compactStatus,
+                         content: AnyView(providerQuotaBlock(
+                            "Zed", quota: u.zed, tint: Theme.zed,
+                            setupHint: "请先在 Zed 中登录 GitHub；Tokei 会无弹窗读取现有 Keychain 登录态。"))),
+            ToolCardItem(id: "sub2api", name: "Sub2API", visible: showSub2API, active: showSub2API,
+                         tint: Theme.sub2api, presentation: .compactStatus,
+                         content: AnyView(providerQuotaBlock(
+                            "Sub2API", quota: u.sub2api, tint: Theme.sub2api,
+                            setupHint: "请在设置的「Provider 额度」中保存 Base URL 与 Group API Key。"))),
+            ToolCardItem(id: "zai", name: "z.ai / GLM", visible: showZai,
+                         active: u.zai.available || zaiUsage.totalTokens > 0,
+                         tint: Theme.zai,
+                         presentation: zaiUsage.totalTokens > 0 ? .standard : .compactStatus,
+                         content: AnyView(providerQuotaBlock(
+                            "z.ai / GLM", quota: u.zai, usage: zaiUsage,
+                            modelsOpen: $zaiModelsOpen, tint: Theme.zai,
+                            setupHint: "请在设置的「Provider 额度」中选择区域并保存 API Key。"))),
             ToolCardItem(id: "grok", name: "Grok", visible: showGrok,
                          active: kr.sessions > 0 || kr.usage_calls > 0 || u.grok.pct != nil,
-                         tint: Theme.grok, content: AnyView(grokBlock(u.grok, kr))),
+                         tint: Theme.grok,
+                         presentation: grokQuotaState.shouldUseCompactCard(
+                            hasUsage: kr.sessions > 0 || kr.usage_calls > 0
+                         ) ? .compactStatus : .standard,
+                         content: AnyView(grokBlock(u.grok, kr))),
+            ToolCardItem(id: "grok-bot", name: "Grok Bot", visible: showGrokBot,
+                         active: grokBotDisplay.range.sessions > 0 ||
+                             grokBotDisplay.range.calls > 0 ||
+                             grokBotDisplay.usage.totalTokens > 0 ||
+                             grokBotDisplay.usage.requests > 0 ||
+                             u.grokBot.quota.available,
+                         tint: Theme.grokBot,
+                         presentation: grokBotDisplay.range.sessions == 0 &&
+                             grokBotDisplay.range.calls == 0 &&
+                             grokBotDisplay.range.turns == 0 &&
+                             grokBotDisplay.usage.totalTokens == 0 &&
+                             grokBotDisplay.usage.requests == 0 &&
+                             u.grokBot.quota.available
+                             ? .compactStatus : .standard,
+                         content: AnyView(grokBotBlock(
+                            u.grokBot, grokBotDisplay.range, grokBotDisplay.usage,
+                            displayedRange: grokBotDisplay.key))),
             ToolCardItem(id: "qoder", name: "Qoder Desktop", visible: showQoder, active: qr.calls > 0,
                          tint: Theme.qoder, content: AnyView(qoderIdeBlock(u.qoder, qr))),
             ToolCardItem(id: "qoderwork", name: "QoderWork", visible: showQoderWork, active: qwr.calls > 0,
@@ -319,51 +465,96 @@ struct PanelView: View {
             ToolCardItem(id: "qodercli", name: "Qoder CLI", visible: showQoderCli, active: qclir.calls > 0,
                          tint: Theme.qodercli, content: AnyView(qodercliBlock(u.qodercli, qclir))),
             ToolCardItem(id: "hermes", name: "Hermes", visible: showHermes, active: hr.sessions > 0,
-                         tint: Theme.hermes, content: AnyView(hermesBlock(hr))),
+                         tint: Theme.hermes, content: AnyView(hermesBlock(hr, modelsOpen: $hermesModelsOpen))),
             ToolCardItem(id: "zcode", name: "ZCode", visible: showZcode, active: zr.sessions > 0,
-                         tint: Theme.zcode, content: AnyView(tokenUsageBlock(title: "ZCode", zr, tint: Theme.zcode, modelsOpen: $zcodeModelsOpen))),
+                         tint: Theme.zcode, content: AnyView(tokenUsageBlock(title: "ZCode", zr, tint: Theme.zcode, modelsOpen: $zcodeModelsOpen, toolID: "zcode"))),
             ToolCardItem(id: "mimocode", name: "MiMoCode", visible: showMimoCode, active: mr.sessions > 0,
-                         tint: Theme.mimocode, content: AnyView(tokenUsageBlock(title: "MiMoCode", mr, tint: Theme.mimocode, modelsOpen: $mimocodeModelsOpen))),
+                         tint: Theme.mimocode, content: AnyView(tokenUsageBlock(title: "MiMoCode", mr, tint: Theme.mimocode, modelsOpen: $mimocodeModelsOpen, toolID: "mimocode"))),
             ToolCardItem(id: "openclaw", name: "OpenClaw", visible: showOpenClaw,
                          active: lr.tasks > 0 || lr.in + lr.out + lr.cr + lr.cw > 0,
-                         tint: Theme.openclaw, content: AnyView(openclawBlock(lr))),
+                         tint: Theme.openclaw, content: AnyView(openclawBlock(lr, modelsOpen: $openClawModelsOpen))),
             ToolCardItem(id: "pi", name: "Pi", visible: showPi, active: pr.sessions > 0,
-                         tint: Theme.pi, content: AnyView(tokenUsageBlock(title: "Pi Coding Agent", pr, tint: Theme.pi, modelsOpen: $piModelsOpen))),
+                         tint: Theme.pi, content: AnyView(tokenUsageBlock(title: "Pi Coding Agent", pr, tint: Theme.pi, modelsOpen: $piModelsOpen, toolID: "pi"))),
+            ToolCardItem(id: "prime_agent", name: "Prime Agent", visible: showPrimeAgent, active: par.sessions > 0,
+                         tint: Theme.primeAgent, content: AnyView(tokenUsageBlock(title: "Prime Agent", par, tint: Theme.primeAgent, modelsOpen: $primeAgentModelsOpen, toolID: "prime_agent"))),
             ToolCardItem(id: "workbuddy", name: "WorkBuddy", visible: showWorkBuddy, active: wr.sessions > 0,
-                         tint: Theme.workbuddy, content: AnyView(tokenUsageBlock(title: "WorkBuddy", wr, tint: Theme.workbuddy, modelsOpen: $workBuddyModelsOpen))),
+                         tint: Theme.workbuddy, content: AnyView(tokenUsageBlock(title: "WorkBuddy", wr, tint: Theme.workbuddy, modelsOpen: $workBuddyModelsOpen, toolID: "workbuddy"))),
+            ToolCardItem(id: "workbuddy-ai", name: "WorkBuddy Intl.",
+                         visible: showWorkBuddyAI, active: wair.sessions > 0,
+                         tint: Theme.workbuddyAI,
+                         content: AnyView(tokenUsageBlock(
+                            title: "WorkBuddy Intl.", wair, tint: Theme.workbuddyAI,
+                            modelsOpen: $workBuddyAIModelsOpen, toolID: "workbuddy-ai"))),
+            ToolCardItem(id: "deepseek_harness", name: "DeepSeek Harness", visible: showDeepSeekHarness,
+                         active: dshr.sessions > 0, tint: Theme.deepseekHarness,
+                         content: AnyView(tokenUsageBlock(title: "DeepSeek Harness", dshr,
+                                                          tint: Theme.deepseekHarness,
+                                                          modelsOpen: $deepSeekHarnessModelsOpen,
+                                                          inclusiveIO: true,
+                                                          toolID: "deepseek_harness"))),
             ToolCardItem(id: "opencode", name: "OpenCode", visible: showOpenCode, active: or.sessions > 0,
-                         tint: Theme.opencode, content: AnyView(tokenUsageBlock(title: "OpenCode", or, tint: Theme.opencode, modelsOpen: $openCodeModelsOpen))),
+                         tint: Theme.opencode, content: AnyView(tokenUsageBlock(title: "OpenCode", or, tint: Theme.opencode, modelsOpen: $openCodeModelsOpen, toolID: "opencode"))),
             ToolCardItem(id: "qwencode", name: "Qwen Code", visible: showQwenCode, active: qcr.sessions > 0,
-                         tint: Theme.qwencode, content: AnyView(tokenUsageBlock(title: "Qwen Code", qcr, tint: Theme.qwencode, modelsOpen: $qwenCodeModelsOpen))),
+                         tint: Theme.qwencode, content: AnyView(tokenUsageBlock(title: "Qwen Code", qcr, tint: Theme.qwencode, modelsOpen: $qwenCodeModelsOpen, toolID: "qwencode"))),
+            ToolCardItem(id: "qwenwork", name: "千问办公", visible: showQwenWork,
+                         active: qwenWorkQuotaEnabled || u.qwenwork.available ||
+                             u.qwenwork.remaining != nil || !u.qwenwork.segments.isEmpty ||
+                             u.qwenwork.shared != nil,
+                         tint: Theme.qwenwork, content: AnyView(qwenWorkBlock(u.qwenwork))),
+            ToolCardItem(id: "kimicode", name: "Kimi Code", visible: showKimiCode, active: kcr.sessions > 0,
+                         tint: Theme.kimicode, content: AnyView(tokenUsageBlock(title: "Kimi Code", kcr, tint: Theme.kimicode, modelsOpen: $kimiCodeModelsOpen, showsCost: false, toolID: "kimicode"))),
         ]
     }
 
     @ViewBuilder
     private func toolCardsLayout(_ cards: [ToolCardItem]) -> some View {
+        let compactCards = cards.filter { $0.presentation == .compactStatus }
+        let standardCards = cards.filter { $0.presentation == .standard }
         if useWide {
-            EqualHeightGrid() {
-                ForEach(cards) { item in
-                    Card(tint: item.tint) { item.content }
-                        .id(cardContentIdentity(for: item))
+            VStack(spacing: 13) {
+                if !compactCards.isEmpty {
+                    EqualHeightGrid(columns: compactCards.count == 1 ? 1 : 2) {
+                        ForEach(compactCards) { item in
+                            Card(tint: item.tint) { item.content }
+                                .id(cardContentIdentity(for: item))
+                        }
+                    }
+                }
+                if !standardCards.isEmpty {
+                    EqualHeightGrid() {
+                        ForEach(standardCards) { item in
+                            Card(tint: item.tint) { item.content }
+                                .id(cardContentIdentity(for: item))
+                        }
+                    }
                 }
             }
         } else {
-            ForEach(cards) { item in
-                Card(tint: item.tint) { item.content }
-                    .id(cardContentIdentity(for: item))
+            VStack(spacing: 13) {
+                ForEach(compactCards + standardCards) { item in
+                    Card(tint: item.tint) { item.content }
+                        .id(cardContentIdentity(for: item))
+                }
             }
         }
     }
 
     private func cardContentIdentity(for item: ToolCardItem) -> String {
-        "\(item.id):\(sel.rawValue):\(store.syncEnabled):\(store.showAllDevices)"
+        let presentation = item.presentation == .compactStatus ? "compact" : "standard"
+        return "\(item.id):\(presentation):\(sel.rawValue):\(store.syncEnabled):\(store.showAllDevices)"
     }
 
     // MARK: - Claude 卡片
     @ViewBuilder
     func claudeBlock(_ c: ClaudeStat, _ r: ClaudeRange) -> some View {
+        let quotaState = SubscriptionQuotaState.resolve([
+            (value: c.q5, stale: c.q5_stale),
+            (value: c.q7, stale: c.q7_stale),
+            (value: c.qf, stale: c.qf_stale),
+        ])
+        let compactExpired = quotaState.shouldUseCompactCard(hasUsage: r.sessions > 0)
         VStack(alignment: .leading, spacing: 11) {
-            cardHead("Claude Code", tint: Theme.claude, sessions: r.sessions)
+            cardHead("Claude Code", tint: Theme.claude, sessions: r.sessions, toolID: "claude")
             if r.sessions > 0 {
                 CostHeadline(value: Fmt.human(r.in + r.out + r.cr + r.cw), caption: "\(sel.label) 总量", tint: Theme.claude)
                 metricGrid([
@@ -383,10 +574,20 @@ struct PanelView: View {
                 if !claudeRows.isEmpty {
                     modelDisclosure(claudeRows, open: $claudeModelsOpen, tint: Theme.claude)
                 }
-            } else {
-                emptyHint
+            } else if !compactExpired && quotaState != .unavailable {
+                usageEmptyHint
             }
-            if c.q5 != nil || c.q7 != nil || c.qf != nil {
+
+            if compactExpired {
+                quotaStateNotice(
+                    title: "额度数据已过期",
+                    detail: "等待 Claude Code 更新额度，恢复后将自动展示。",
+                    source: "Claude Code 额度缓存",
+                    updated: c.q_updated,
+                    tint: Theme.claude,
+                    warning: true
+                )
+            } else if quotaState != .unavailable {
                 thinDivider
                 if let q5 = c.q5, c.q5_stale != true {
                     quotaRow(title: "5h 剩余", pct: 100 - q5, reset: c.q5_reset, tint: Theme.claude)
@@ -397,7 +598,29 @@ struct PanelView: View {
                 if let qf = c.qf, c.qf_stale != true {
                     quotaRow(title: "周 · Fable 剩余", pct: 100 - qf, reset: c.qf_reset, tint: .orange)
                 }
-                claudeQuotaStatus(c)
+                if quotaState == .expired {
+                    quotaStateNotice(
+                        title: "额度数据已过期",
+                        detail: "当前用量仍可查看；额度更新后会自动恢复。",
+                        source: "Claude Code 额度缓存",
+                        updated: c.q_updated,
+                        tint: Theme.claude,
+                        warning: true
+                    )
+                } else {
+                    claudeQuotaStatus(c)
+                }
+            } else if r.sessions > 0 {
+                thinDivider
+                quotaStateNotice(
+                    title: "暂未获取到额度数据",
+                    detail: claudeCLIQuotaEnabled
+                        ? "用量统计不受影响；登录态或网络恢复后会自动重试。"
+                        : "仅使用 CLI 时，可在「隐私与额度」开启 Claude Code CLI 额度查询。",
+                    source: "Claude Code 额度缓存",
+                    updated: c.q_updated,
+                    tint: Theme.claude
+                )
             }
         }
     }
@@ -405,8 +628,9 @@ struct PanelView: View {
     // MARK: - Codex 卡片
     @ViewBuilder
     func codexBlock(_ x: CodexStat, _ r: CodexRange) -> some View {
+        let hasQuotaData = x.p5 != nil || x.pw != nil || (x.reset_cards?.count ?? 0) > 0
         VStack(alignment: .leading, spacing: 11) {
-            cardHead("Codex", tint: Theme.codex, sessions: r.sessions)
+            cardHead("Codex", tint: Theme.codex, sessions: r.sessions, toolID: "codex")
             if r.sessions > 0 {
                 CostHeadline(value: Fmt.human(r.in + r.cached + r.out), caption: "\(sel.label) 总量", tint: Theme.codex)
                 metricGrid([.init("dollarsign.circle", "≈成本", String(format: "$%.2f", r.cost))],
@@ -423,14 +647,20 @@ struct PanelView: View {
                     tokenModelDisclosure(r.models, open: $codexModelsOpen, tint: Theme.codex,
                                          reasonIncludedInOutput: true)
                 }
-            } else {
-                emptyHint
+            } else if hasQuotaData {
+                usageEmptyHint
             }
-            if x.pw != nil || (x.reset_cards?.count ?? 0) > 0 {
+            if hasQuotaData {
                 thinDivider
             }
-            if let pw = x.pw {
+            if let p5 = x.p5, x.p5_stale != true {
+                quotaRow(title: "5h 剩余", pct: 100 - p5, reset: x.r5, tint: Theme.codex)
+            }
+            if let pw = x.pw, x.pw_stale != true {
                 quotaRow(title: "周剩余", pct: 100 - pw, reset: x.rw, tint: Theme.codex)
+            }
+            if x.pw_stale == true {
+                codexQuotaStatus(x)
             }
             if let cards = x.reset_cards, cards.count > 0 {
                 codexResetCardsRow(cards)
@@ -445,6 +675,16 @@ struct PanelView: View {
                         .padding(.horizontal, 7).padding(.vertical, 2)
                         .background(Capsule().fill(Theme.codex.opacity(0.16)))
                 }
+            }
+            if r.sessions > 0 && !hasQuotaData {
+                thinDivider
+                quotaStateNotice(
+                    title: "暂未获取到额度数据",
+                    detail: "用量统计不受影响；检测到订阅周期后会自动展示。",
+                    source: "Codex 本地状态",
+                    updated: nil,
+                    tint: Theme.codex
+                )
             }
         }
     }
@@ -518,13 +758,24 @@ struct PanelView: View {
         }
     }
 
-    // MARK: - Gemini 卡片
+    // MARK: - Gemini / Antigravity 卡片
     @ViewBuilder
-    func geminiBlock(_ r: GeminiRange) -> some View {
+    func geminiBlock(
+        _ r: GeminiRange,
+        quota: ProviderQuotaStat,
+        displayedRange: RangeKey? = nil
+    ) -> some View {
+        let usageLabel = (displayedRange ?? sel).label
         VStack(alignment: .leading, spacing: 11) {
-            cardHead("Gemini CLI", tint: Theme.gemini, sessions: r.sessions)
-            if r.sessions > 0 {
-                CostHeadline(value: Fmt.human(r.in + r.cached + r.out + r.thoughts), caption: "\(sel.label) 总量", tint: Theme.gemini)
+            cardHead("Gemini / Antigravity", tint: Theme.gemini, sessions: r.sessions,
+                     toolID: r.hasUsage ? "gemini" : nil)
+            if r.hasUsage {
+                if let displayedRange, displayedRange != sel {
+                    Text("\(sel.label)暂无用量，显示\(displayedRange.label)最近用量")
+                        .font(.system(size: Theme.fontSize(9.5)))
+                        .foregroundStyle(Theme.tTertiary)
+                }
+                CostHeadline(value: Fmt.human(r.totalTokens), caption: "\(usageLabel) 总量", tint: Theme.gemini)
                 metricGrid([.init("dollarsign.circle", "≈成本", String(format: "$%.2f", r.cost))],
                     hit: r.hit, extra: {
                     var items: [Metric] = [
@@ -543,10 +794,267 @@ struct PanelView: View {
                         return ModelRow(name: m.name, pin: m.pin, pout: m.pout, cost: m.cost, total: total, hit: hit,
                                         tokIn: m.in, tokOut: m.out, tokCR: m.cached, tokCW: m.thoughts)
                     }
-                    modelDisclosure(geminiRows, open: $geminiModelsOpen, tint: Theme.gemini)
+                    modelDisclosure(geminiRows, open: $geminiModelsOpen, tint: Theme.gemini,
+                                    periodLabel: usageLabel)
                 }
             } else {
+                quota.available ? AnyView(usageEmptyHint) : AnyView(emptyHint)
+            }
+            if quota.available {
+                if r.hasUsage { thinDivider }
+                providerQuotaContent(quota, tint: Theme.gemini)
+            }
+        }
+    }
+
+    // MARK: - CodexBar-compatible quota providers
+    @ViewBuilder
+    func providerQuotaBlock(
+        _ title: String,
+        quota: ProviderQuotaStat,
+        usage: TokenUsageRange? = nil,
+        modelsOpen: Binding<Bool>? = nil,
+        tint: Color,
+        setupHint: String
+    ) -> some View {
+        let range = usage ?? TokenUsageRange()
+        let hasUsage = range.totalTokens > 0 || range.requests > 0
+        VStack(alignment: .leading, spacing: 11) {
+            cardHeadPlain(title, tint: tint)
+            if hasUsage {
+                providerTokenUsageContent(range, modelsOpen: modelsOpen, tint: tint)
+            }
+            if quota.available {
+                if hasUsage { thinDivider }
+                providerQuotaContent(quota, tint: tint)
+            } else if !hasUsage {
+                Text(setupHint)
+                    .font(.system(size: Theme.fontSize(10)))
+                    .foregroundStyle(Theme.tTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    func providerTokenUsageContent(
+        _ r: TokenUsageRange,
+        modelsOpen: Binding<Bool>?,
+        tint: Color,
+        periodLabel: String? = nil
+    ) -> some View {
+        var top: [Metric] = []
+        if r.cost > 0 {
+            top.append(.init("dollarsign.circle", "API 价", String(format: "$%.2f", r.cost)))
+        }
+        if r.requests > 0 {
+            top.append(.init("arrow.triangle.2.circlepath", "请求", Fmt.human(r.requests)))
+        }
+        var details: [Metric] = []
+        if r.hasComponents {
+            details = [
+                .init("arrow.down", "输入", Fmt.human(r.in)),
+                .init("arrow.up", "输出", Fmt.human(r.out)),
+            ]
+            if r.cr > 0 { details.append(.init("bolt.fill", "缓存读", Fmt.human(r.cr))) }
+            if r.cw > 0 {
+                details.append(.init("square.stack.3d.up.fill", "缓存写", Fmt.human(r.cw)))
+            }
+            if r.reason > 0 { details.append(.init("brain", "推理", Fmt.human(r.reason))) }
+        }
+        return VStack(alignment: .leading, spacing: 9) {
+            CostHeadline(
+                value: Fmt.human(r.totalTokens),
+                caption: "\(r.coverage ?? periodLabel ?? sel.label) 账号总量",
+                tint: tint
+            )
+            Text("账号级用量 · 单列统计，避免与本地工具日志重复计算")
+                .font(.system(size: Theme.fontSize(8.5)))
+                .foregroundStyle(Theme.tTertiary)
+            if !top.isEmpty || !details.isEmpty {
+                metricGrid(top, hit: r.hit, extra: details, tint: tint)
+            }
+            if !r.models.isEmpty, let modelsOpen {
+                tokenModelDisclosure(
+                    r.models,
+                    open: modelsOpen,
+                    tint: tint,
+                    periodLabel: periodLabel
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    func providerQuotaContent(_ quota: ProviderQuotaStat, tint: Color) -> some View {
+        if quota.plan != nil || quota.account != nil {
+            HStack(spacing: 6) {
+                if let plan = quota.plan, !plan.isEmpty {
+                    providerQuotaPill(plan, tint: tint)
+                }
+                if let account = quota.account, !account.isEmpty {
+                    Text(account)
+                        .font(.system(size: Theme.fontSize(9), design: .monospaced))
+                        .foregroundStyle(Theme.tTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer(minLength: 0)
+            }
+        }
+
+        ForEach(quota.windows) { window in
+            if window.usage_known, let used = window.used_pct {
+                quotaRow(
+                    title: window.title,
+                    pct: max(0, min(100, 100 - used)),
+                    detail: window.detail,
+                    reset: window.reset,
+                    tint: tint
+                )
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(window.title)
+                        .font(.system(size: Theme.fontSize(11)))
+                        .foregroundStyle(Theme.tSecondary)
+                    Spacer(minLength: 6)
+                    Text(window.detail ?? "额度比例未知")
+                        .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
+                        .foregroundStyle(Theme.tTertiary)
+                        .multilineTextAlignment(.trailing)
+                }
+            }
+        }
+
+        if !quota.details.isEmpty {
+            thinDivider
+            VStack(spacing: 6) {
+                ForEach(Array(quota.details.prefix(12).enumerated()), id: \.offset) { item in
+                    let detail = item.element
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(detail.label)
+                            .font(.system(size: Theme.fontSize(10)))
+                            .foregroundStyle(Theme.tTertiary)
+                        Spacer(minLength: 8)
+                        VStack(alignment: .trailing, spacing: 1) {
+                            Text(providerQuotaDetailValue(detail))
+                                .font(.system(size: Theme.fontSize(10), weight: .semibold, design: .monospaced))
+                                .foregroundStyle(Theme.tPrimary)
+                            if let secondary = detail.secondary, !secondary.isEmpty {
+                                Text(secondary)
+                                    .font(.system(size: Theme.fontSize(8.5), design: .monospaced))
+                                    .foregroundStyle(Theme.tTertiary)
+                                    .multilineTextAlignment(.trailing)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if quota.stale {
+            quotaStateNotice(
+                title: "额度数据已过期",
+                detail: "当前展示最近一次成功结果；登录态或网络恢复后会自动刷新。",
+                source: quota.source ?? "Provider 缓存",
+                updated: quota.updated,
+                tint: tint,
+                warning: true
+            )
+        } else if let updated = quota.updated {
+            HStack(spacing: 5) {
+                Image(systemName: "clock")
+                    .font(.system(size: Theme.fontSize(8.5)))
+                Text("额度更新于 \(Fmt.reset(updated))")
+                    .font(.system(size: Theme.fontSize(9), design: .monospaced))
+                Spacer(minLength: 4)
+            }
+            .foregroundStyle(Theme.tTertiary)
+        }
+    }
+
+    func providerQuotaPill(_ text: String, tint: Color) -> some View {
+        Text(text)
+            .font(.system(size: Theme.fontSize(9.5), weight: .semibold, design: .monospaced))
+            .foregroundStyle(Theme.tSecondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(tint.opacity(0.16)))
+    }
+
+    func providerQuotaDetailValue(_ detail: ProviderQuotaDetail) -> String {
+        if detail.label.contains("到期"), let epoch = Int(detail.value) {
+            return Fmt.reset(epoch)
+        }
+        return detail.value
+    }
+
+    // MARK: - Grok Bot 卡片
+    @ViewBuilder
+    func grokBotBlock(
+        _ stat: GrokBotStat,
+        _ r: QoderRange,
+        _ usage: TokenUsageRange,
+        displayedRange: RangeKey
+    ) -> some View {
+        let hasActivity = r.sessions > 0 || r.calls > 0 || r.turns > 0
+        let hasUsage = usage.totalTokens > 0 || usage.requests > 0
+        VStack(alignment: .leading, spacing: 11) {
+            cardHead("Grok Bot", tint: Theme.grokBot, sessions: r.sessions,
+                     toolID: hasActivity && displayedRange == sel ? "grok-bot" : nil)
+            if hasUsage {
+                if displayedRange != sel {
+                    Text("\(sel.label)暂无活动，显示\(displayedRange.label)最近记录")
+                        .font(.system(size: Theme.fontSize(9.5)))
+                        .foregroundStyle(Theme.tTertiary)
+                }
+                providerTokenUsageContent(
+                    usage,
+                    modelsOpen: $grokBotModelsOpen,
+                    tint: Theme.grokBot,
+                    periodLabel: displayedRange.label
+                )
+                if hasActivity {
+                    Text("本地记录 · \(r.turns) 条消息 · \(r.calls) 次响应")
+                        .font(.system(size: Theme.fontSize(8.5)))
+                        .foregroundStyle(Theme.tTertiary)
+                }
+            } else if hasActivity {
+                if displayedRange != sel {
+                    Text("\(sel.label)暂无活动，显示\(displayedRange.label)最近记录")
+                        .font(.system(size: Theme.fontSize(9.5)))
+                        .foregroundStyle(Theme.tTertiary)
+                }
+                CostHeadline(
+                    value: Fmt.human(r.calls > 0 ? r.calls : r.turns),
+                    caption: "\(displayedRange.label) 响应",
+                    tint: Theme.grokBot
+                )
+                metricGrid({
+                    var items: [Metric] = [
+                        .init("bubble.left", "你的消息", Fmt.human(r.turns)),
+                        .init("sparkles", "响应", Fmt.human(r.calls)),
+                    ]
+                    if r.tools > 0 {
+                        items.append(.init("wrench.and.screwdriver", "工具调用", Fmt.human(r.tools)))
+                    }
+                    if r.duration > 0 {
+                        items.append(.init("clock", "活跃", Fmt.duration(r.duration * 1000)))
+                    }
+                    return items
+                }(), tint: Theme.grokBot)
+                Text("本地活动 · 授权后显示官方 Token、模型和成本")
+                    .font(.system(size: Theme.fontSize(8.5)))
+                    .foregroundStyle(Theme.tTertiary)
+            } else if !stat.quota.available {
                 emptyHint
+            }
+            if stat.quota.available {
+                if hasActivity || hasUsage { thinDivider }
+                providerQuotaContent(stat.quota, tint: Theme.grokBot)
+            } else if grokBotQuotaEnabled {
+                Text("官方数据暂时不可用，Tokei 将自动重试")
+                    .font(.system(size: Theme.fontSize(9)))
+                    .foregroundStyle(Theme.tTertiary)
             }
         }
     }
@@ -554,15 +1062,23 @@ struct PanelView: View {
     // MARK: - Grok 卡片
     @ViewBuilder
     func grokBlock(_ g: GrokStat, _ r: GrokRange) -> some View {
+        let hasUsage = r.sessions > 0 || r.usage_calls > 0
+        let quotaState = SubscriptionQuotaState.resolve([
+            (value: g.pct, stale: g.stale),
+        ])
+        let compactExpired = quotaState.shouldUseCompactCard(hasUsage: hasUsage)
         VStack(alignment: .leading, spacing: 11) {
-            cardHead("Grok", tint: Theme.grok, sessions: r.sessions)
-            if r.sessions > 0 || r.usage_calls > 0 {
+            cardHead("Grok", tint: Theme.grok, sessions: r.sessions, toolID: "grok")
+            if hasUsage {
                 CostHeadline(value: Fmt.human(r.tokens),
                              caption: r.usage_available ? "\(sel.label) 真实用量" : "\(sel.label) 上下文快照",
                              tint: Theme.grok)
                 let grokMetrics: [Metric] = {
                     var items: [Metric] = []
                     if r.usage_available {
+                        if r.cost > 0 {
+                            items.append(.init("dollarsign.circle", "≈成本", String(format: "$%.2f", r.cost)))
+                        }
                         items.append(.init("arrow.down", "输入", Fmt.human(r.in)))
                         items.append(.init("bolt.fill", "缓存读", Fmt.human(r.cr)))
                         items.append(.init("arrow.up", "输出", Fmt.human(r.out)))
@@ -601,16 +1117,28 @@ struct PanelView: View {
                     modelBadge(model, tint: Theme.grok)
                 }
                 Text(r.usage_available
-                     ? "来自 Grok Build 本地推理日志；成本未提供。"
+                     ? (r.cost > 0
+                        ? "来自 Grok Build 本地推理日志；成本按 API 价估算，订阅实付不按此。"
+                        : "来自 Grok Build 本地推理日志；当前模型未匹配到公开价格。")
                      : "旧版日志未保存真实用量，当前仅展示上下文与执行指标。")
                     .font(.system(size: Theme.fontSize(8.5)))
                     .foregroundStyle(Theme.tTertiary)
                     .fixedSize(horizontal: false, vertical: true)
-            } else if g.pct == nil {
-                emptyHint
+            } else if !compactExpired && quotaState != .unavailable {
+                usageEmptyHint
             }
-            if let pct = g.pct, g.stale != true {
-                if r.sessions > 0 || r.usage_calls > 0 { thinDivider }
+
+            if compactExpired {
+                quotaStateNotice(
+                    title: "额度周期已结束",
+                    detail: "Grok 写入新周期日志后，将自动恢复额度展示。",
+                    source: grokQuotaSourceLabel(g.source),
+                    updated: g.q_updated,
+                    tint: Theme.grok,
+                    warning: true
+                )
+            } else if let pct = g.pct, g.stale != true {
+                if hasUsage { thinDivider }
                 let title = (g.window == "month") ? "月剩余" : "周剩余"
                 // 总剩余：同一周额度池。分产品 usagePercent 是该产品在池内的占用占比，不是独立额度剩余。
                 quotaRow(title: title, pct: 100 - pct, reset: g.reset, tint: Theme.grok)
@@ -636,22 +1164,31 @@ struct PanelView: View {
                     }
                 }
                 grokQuotaStatus(g)
-            } else if g.stale == true {
-                if r.sessions > 0 || r.usage_calls > 0 { thinDivider }
-                Text("额度周期已结束，等待 Grok 写入新日志")
-                    .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
-                    .foregroundStyle(Color.orange.opacity(0.88))
+            } else if quotaState == .expired {
+                if hasUsage { thinDivider }
+                quotaStateNotice(
+                    title: "额度周期已结束",
+                    detail: "当前用量仍可查看；新周期日志写入后会自动恢复。",
+                    source: grokQuotaSourceLabel(g.source),
+                    updated: g.q_updated,
+                    tint: Theme.grok,
+                    warning: true
+                )
+            } else if hasUsage {
+                thinDivider
+                quotaStateNotice(
+                    title: "暂未获取到额度数据",
+                    detail: "用量统计不受影响；检测到订阅周期后会自动展示。",
+                    source: grokQuotaSourceLabel(g.source),
+                    updated: g.q_updated,
+                    tint: Theme.grok
+                )
             }
         }
     }
 
     func grokQuotaStatus(_ stat: GrokStat) -> some View {
-        let sourceLabel: String
-        switch stat.source {
-        case "live": sourceLabel = "实时接口"
-        case "cache": sourceLabel = "本地缓存"
-        default: sourceLabel = "本地日志"
-        }
+        let sourceLabel = grokQuotaSourceLabel(stat.source)
         let updated = stat.q_updated.map { Fmt.reset($0) } ?? "更新时间未知"
         return HStack(spacing: 5) {
             Image(systemName: "clock")
@@ -664,6 +1201,14 @@ struct PanelView: View {
         .help(stat.source == "live"
               ? "已开启 Grok 实时额度查询。Grok Build / API 等为同一周额度池内的占用拆分，共享上方重置时间。"
               : "默认只读 ~/.grok 本地日志，不访问网络")
+    }
+
+    private func grokQuotaSourceLabel(_ source: String?) -> String {
+        switch source {
+        case "live": return "Grok 实时接口"
+        case "cache": return "Grok 本地缓存"
+        default: return "Grok 本地日志"
+        }
     }
 
     /// 账单 product 字段 → 更可读的名称。
@@ -709,11 +1254,210 @@ struct PanelView: View {
         .help(help)
     }
 
+    // MARK: - 千问办公额度卡片
+    @ViewBuilder
+    func qwenWorkBlock(_ quota: QwenWorkQuota) -> some View {
+        VStack(alignment: .leading, spacing: 11) {
+            cardHeadPlain("千问办公", tint: Theme.qwenwork)
+
+            if quota.available || quota.remaining != nil || !quota.segments.isEmpty || quota.shared != nil {
+                if quota.exceeded {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                        Text("官方额度状态：已用尽")
+                    }
+                    .font(.system(size: Theme.fontSize(10), weight: .semibold))
+                    .foregroundStyle(Color.red.opacity(0.92))
+                }
+
+                if let remaining = quota.remaining {
+                    CostHeadline(
+                        value: Fmt.credits(remaining),
+                        caption: quota.is_team ? "团队账号个人可用积分" : "个人可用积分",
+                        tint: Theme.qwenwork
+                    )
+                }
+
+                // 有明确比例时才画进度条。部分千问办公套餐只返回绝对积分余额。
+                if let remainingPct = quota.remaining_pct {
+                    quotaRow(
+                        title: "综合剩余比例",
+                        pct: max(0, min(100, remainingPct)),
+                        reset: nil,
+                        tint: Theme.qwenwork
+                    )
+                }
+
+                if let expiresAt = quota.expires_at {
+                    qwenWorkDateRow("额度有效期", epoch: expiresAt)
+                }
+                if let planExpiration = quota.plan_expiration,
+                   planExpiration != quota.expires_at {
+                    qwenWorkDateRow("套餐有效期", epoch: planExpiration)
+                }
+
+                if !quota.segments.isEmpty {
+                    thinDivider
+                    Text("个人积分明细")
+                        .font(.system(size: Theme.fontSize(10), weight: .semibold))
+                        .foregroundStyle(Theme.tSecondary)
+                    ForEach(Array(quota.segments.enumerated()), id: \.offset) { item in
+                        qwenWorkSegmentRow(item.element)
+                    }
+                }
+
+                if let shared = quota.shared {
+                    thinDivider
+                    qwenWorkSharedBlock(shared)
+                }
+
+                qwenWorkQuotaStatus(quota)
+            } else if qwenWorkQuotaEnabled {
+                Text("未读取到额度。请确认千问办公已登录并保持运行。")
+                    .font(.system(size: Theme.fontSize(10)))
+                    .foregroundStyle(Theme.tTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("在设置的「隐私与额度」中开启查询后显示。")
+                    .font(.system(size: Theme.fontSize(10)))
+                    .foregroundStyle(Theme.tTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    func qwenWorkSegmentRow(_ segment: QwenWorkQuotaSegment) -> some View {
+        let remainingPct = ((segment.total ?? 0) > 0)
+            ? segment.percentage_used.map { max(0, min(100, 100 - $0)) }
+            : nil
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(Self.qwenWorkSegmentLabel(segment))
+                    .font(.system(size: Theme.fontSize(11)))
+                    .foregroundStyle(Theme.tSecondary)
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                if let remaining = segment.remaining {
+                    Text("剩余 \(Fmt.credits(remaining)) \(Self.qwenWorkUnitLabel(segment.unit))")
+                        .font(.system(size: Theme.fontSize(11), weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Theme.tPrimary)
+                }
+            }
+
+            if let total = segment.total, total > 0 {
+                let used = segment.used.map(Fmt.credits) ?? "?"
+                Text("已用 \(used) / 总量 \(Fmt.credits(total))")
+                    .font(.system(size: Theme.fontSize(9), design: .monospaced))
+                    .foregroundStyle(Theme.tTertiary)
+            }
+
+            if let remainingPct {
+                HStack(spacing: 6) {
+                    MiniBar(value: remainingPct, tint: remainingPct <= 15 ? .red : Theme.qwenwork)
+                    Text(String(format: "%.0f%%", remainingPct))
+                        .font(.system(size: Theme.fontSize(9.5), weight: .semibold, design: .monospaced))
+                        .foregroundStyle(remainingPct <= 15 ? Color.red : Theme.tSecondary)
+                }
+            }
+
+            if let renewsAt = segment.renews_at {
+                qwenWorkDateRow("续期", epoch: renewsAt)
+            } else if let expiresAt = segment.expires_at {
+                qwenWorkDateRow("到期", epoch: expiresAt)
+            }
+        }
+        .padding(.vertical, 1)
+    }
+
+    func qwenWorkSharedBlock(_ shared: QwenWorkSharedQuota) -> some View {
+        let remainingPct = ((shared.total ?? 0) > 0)
+            ? shared.percentage_used.map { max(0, min(100, 100 - $0)) }
+            : nil
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("团队共享资源包")
+                    .font(.system(size: Theme.fontSize(10), weight: .semibold))
+                    .foregroundStyle(Theme.tSecondary)
+                Spacer(minLength: 6)
+                if let remaining = shared.remaining {
+                    Text("剩余 \(Fmt.credits(remaining)) \(Self.qwenWorkUnitLabel(shared.unit))")
+                        .font(.system(size: Theme.fontSize(11), weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Theme.tPrimary)
+                }
+            }
+            Text("共享包独立展示，不计入上方个人积分")
+                .font(.system(size: Theme.fontSize(8.5)))
+                .foregroundStyle(Theme.tTertiary)
+            if let total = shared.total, total > 0 {
+                let used = shared.used.map(Fmt.credits) ?? "?"
+                Text("已用 \(used) / 总量 \(Fmt.credits(total))")
+                    .font(.system(size: Theme.fontSize(9), design: .monospaced))
+                    .foregroundStyle(Theme.tTertiary)
+            }
+            if let remainingPct {
+                HStack(spacing: 6) {
+                    MiniBar(value: remainingPct, tint: remainingPct <= 15 ? .red : Theme.qwenwork)
+                    Text(String(format: "%.0f%%", remainingPct))
+                        .font(.system(size: Theme.fontSize(9.5), weight: .semibold, design: .monospaced))
+                        .foregroundStyle(remainingPct <= 15 ? Color.red : Theme.tSecondary)
+                }
+            }
+            if let expiresAt = shared.expires_at {
+                qwenWorkDateRow("共享包到期", epoch: expiresAt)
+            }
+        }
+    }
+
+    func qwenWorkDateRow(_ label: String, epoch: Int) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "calendar")
+                .font(.system(size: Theme.fontSize(8.5)))
+            Text("\(label) · \(Fmt.reset(epoch))")
+                .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
+            Spacer()
+        }
+        .foregroundStyle(Theme.tTertiary)
+    }
+
+    func qwenWorkQuotaStatus(_ quota: QwenWorkQuota) -> some View {
+        let sourceLabel: String
+        switch quota.source {
+        case "mcp", "local_mcp": sourceLabel = "本机 QwenWork 接口"
+        case "cache": sourceLabel = "本地缓存"
+        default: sourceLabel = "额度数据"
+        }
+        let updated = quota.updated.map { Fmt.reset($0) } ?? "更新时间未知"
+        return HStack(spacing: 5) {
+            Image(systemName: quota.stale ? "exclamationmark.triangle.fill" : "clock")
+                .font(.system(size: Theme.fontSize(9)))
+            Text("\(quota.stale ? "缓存可能已过期" : sourceLabel) · \(updated)")
+                .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
+            Spacer()
+        }
+        .foregroundStyle(quota.stale ? Color.orange.opacity(0.88) : Theme.tTertiary)
+        .help("Tokei 仅通过千问办公桌面端的本机 QwenWork 接口读取额度，不读取或保存登录凭据。")
+    }
+
+    static func qwenWorkSegmentLabel(_ segment: QwenWorkQuotaSegment) -> String {
+        let key = segment.id.isEmpty ? segment.kind : segment.id
+        switch key.lowercased().replacingOccurrences(of: "-", with: "_") {
+        case "plan", "plan_credits": return "套餐积分"
+        case "addon", "add_on", "add_on_credits": return "加购积分"
+        case "shared_addon", "shared_add_on", "shared_add_on_credits": return "共享加购积分"
+        default: return key.isEmpty ? "积分" : key
+        }
+    }
+
+    static func qwenWorkUnitLabel(_ unit: String?) -> String {
+        guard let unit, !unit.isEmpty else { return "积分" }
+        return ["credit", "credits"].contains(unit.lowercased()) ? "积分" : unit
+    }
+
     // MARK: - Qoder IDE 卡片
     @ViewBuilder
     func qoderIdeBlock(_ q: QoderIdeStat, _ r: QoderIdeRange) -> some View {
         VStack(alignment: .leading, spacing: 11) {
-            cardHeadPlain("Qoder Desktop", tint: Theme.qoder)
+            cardHeadPlain("Qoder Desktop", tint: Theme.qoder, toolID: "qoder")
             if r.calls > 0 {
                 let total = r.in + r.cached + r.out
                 if total > 0 {
@@ -760,7 +1504,7 @@ struct PanelView: View {
     @ViewBuilder
     func qoderworkBlock(_ q: QoderStat, _ r: QoderRange) -> some View {
         VStack(alignment: .leading, spacing: 11) {
-            cardHeadPlain("QoderWork", tint: Theme.qoderwork)
+            cardHeadPlain("QoderWork", tint: Theme.qoderwork, toolID: "qoderwork")
             if r.calls > 0 {
                 metricGrid({
                     var items: [Metric] = [
@@ -792,7 +1536,7 @@ struct PanelView: View {
     @ViewBuilder
     func qodercliBlock(_ q: QoderStat, _ r: QoderRange) -> some View {
         VStack(alignment: .leading, spacing: 11) {
-            cardHeadPlain("Qoder CLI", tint: Theme.qodercli)
+            cardHeadPlain("Qoder CLI", tint: Theme.qodercli, toolID: "qodercli")
             if r.calls > 0 {
                 metricGrid({
                     var items: [Metric] = [
@@ -820,9 +1564,9 @@ struct PanelView: View {
 
     // MARK: - Hermes 卡片
     @ViewBuilder
-    func hermesBlock(_ r: HermesRange) -> some View {
+    func hermesBlock(_ r: HermesRange, modelsOpen: Binding<Bool>) -> some View {
         VStack(alignment: .leading, spacing: 11) {
-            cardHead("Hermes", tint: Theme.hermes, sessions: r.sessions)
+            cardHead("Hermes", tint: Theme.hermes, sessions: r.sessions, toolID: "hermes")
             if r.sessions > 0 {
                 CostHeadline(value: Fmt.human(r.in + r.out + r.cr + r.cw + r.reason), caption: "\(sel.label) 总量", tint: Theme.hermes)
                 metricGrid([.init("dollarsign.circle", "≈成本", String(format: "$%.2f", r.cost))],
@@ -835,6 +1579,9 @@ struct PanelView: View {
                     if r.reason > 0 { items.append(.init("brain", "推理", Fmt.human(r.reason))) }
                     return items
                 }(), tint: Theme.hermes)
+                if !r.models.isEmpty {
+                    tokenModelDisclosure(r.models, open: modelsOpen, tint: Theme.hermes)
+                }
             } else {
                 emptyHint
             }
@@ -843,9 +1590,9 @@ struct PanelView: View {
 
     // MARK: - OpenClaw 卡片
     @ViewBuilder
-    func openclawBlock(_ r: OpenClawRange) -> some View {
+    func openclawBlock(_ r: OpenClawRange, modelsOpen: Binding<Bool>) -> some View {
         VStack(alignment: .leading, spacing: 11) {
-            cardHead("OpenClaw", tint: Theme.openclaw, sessions: r.sessions)
+            cardHead("OpenClaw", tint: Theme.openclaw, sessions: r.sessions, toolID: "openclaw")
             if r.in + r.out + r.cr + r.cw > 0 {
                 CostHeadline(value: Fmt.human(r.in + r.out + r.cr + r.cw), caption: "\(sel.label) 总量", tint: Theme.openclaw)
                 metricGrid([.init("dollarsign.circle", "≈成本", String(format: "$%.2f", r.cost))],
@@ -858,6 +1605,9 @@ struct PanelView: View {
                     if r.tasks > 0 { items.append(.init("checklist", "任务", "\(r.tasks)")) }
                     return items
                 }(), tint: Theme.openclaw)
+                if !r.models.isEmpty {
+                    tokenModelDisclosure(r.models, open: modelsOpen, tint: Theme.openclaw)
+                }
             } else if r.tasks > 0 {
                 HStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -892,15 +1642,18 @@ struct PanelView: View {
 
     // MARK: - Token usage cards
     @ViewBuilder
-    func tokenUsageBlock(title: String, _ r: TokenUsageRange, tint: Color, modelsOpen: Binding<Bool>) -> some View {
+    func tokenUsageBlock(title: String, _ r: TokenUsageRange, tint: Color,
+                         modelsOpen: Binding<Bool>, inclusiveIO: Bool = false,
+                         showsCost: Bool = true, toolID: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 11) {
-            cardHead(title, tint: tint, sessions: r.sessions)
+            cardHead(title, tint: tint, sessions: r.sessions, toolID: toolID)
             if r.sessions > 0 {
                 CostHeadline(value: Fmt.human(r.in + r.out + r.cr + r.cw + r.reason), caption: "\(sel.label) 总量", tint: tint)
-                metricGrid([.init("dollarsign.circle", "≈成本", String(format: "$%.2f", r.cost))],
-                    hit: r.hit, extra: tokenUsageMetrics(r), tint: tint)
+                metricGrid(showsCost ? [.init("dollarsign.circle", "≈成本", String(format: "$%.2f", r.cost))] : [],
+                    hit: r.hit, extra: tokenUsageMetrics(r, inclusiveIO: inclusiveIO), tint: tint)
                 if !r.models.isEmpty {
-                    tokenModelDisclosure(r.models, open: modelsOpen, tint: tint)
+                    tokenModelDisclosure(r.models, open: modelsOpen, tint: tint,
+                                         inclusiveIO: inclusiveIO)
                 }
             } else {
                 emptyHint
@@ -908,7 +1661,17 @@ struct PanelView: View {
         }
     }
 
-    func tokenUsageMetrics(_ r: TokenUsageRange) -> [Metric] {
+    func tokenUsageMetrics(_ r: TokenUsageRange, inclusiveIO: Bool = false) -> [Metric] {
+        if inclusiveIO {
+            var items: [Metric] = [
+                .init("arrow.down", "输入", Fmt.human(r.in + r.cr + r.cw)),
+                .init("arrow.up", "输出", Fmt.human(r.out + r.reason)),
+            ]
+            if r.cr > 0 { items.append(.init("bolt.fill", "其中缓存读", Fmt.human(r.cr))) }
+            if r.reason > 0 { items.append(.init("brain", "其中推理", Fmt.human(r.reason))) }
+            if r.cw > 0 { items.append(.init("square.stack.3d.up.fill", "其中缓存写", Fmt.human(r.cw))) }
+            return items
+        }
         var items: [Metric] = [
             .init("arrow.down", "输入", Fmt.human(r.in)),
             .init("arrow.up", "输出", Fmt.human(r.out)),
@@ -934,6 +1697,57 @@ struct PanelView: View {
         Text("暂无数据")
             .font(.system(size: Theme.fontSize(10)))
             .foregroundStyle(Theme.tTertiary)
+    }
+
+    var usageEmptyHint: some View {
+        Text("\(sel.label)暂无用量，额度状态如下")
+            .font(.system(size: Theme.fontSize(10)))
+            .foregroundStyle(Theme.tTertiary)
+    }
+
+    func quotaStateNotice(
+        title: String,
+        detail: String,
+        source: String,
+        updated: Int?,
+        tint: Color,
+        warning: Bool = false
+    ) -> some View {
+        let statusTint = warning ? Color.orange : tint
+        let updatedLabel = updated.map { "上次更新 \(Fmt.reset($0))" } ?? "尚无更新时间"
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: warning ? "exclamationmark.triangle.fill" : "info.circle.fill")
+                    .font(.system(size: Theme.fontSize(10), weight: .semibold))
+                Text(title)
+                    .font(.system(size: Theme.fontSize(11), weight: .semibold))
+                Spacer(minLength: 4)
+            }
+            .foregroundStyle(statusTint.opacity(0.95))
+
+            Text(detail)
+                .font(.system(size: Theme.fontSize(9.5)))
+                .foregroundStyle(Theme.tSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 5) {
+                Image(systemName: "clock")
+                    .font(.system(size: Theme.fontSize(8.5)))
+                Text("\(source) · \(updatedLabel)")
+                    .font(.system(size: Theme.fontSize(9), design: .monospaced))
+                Spacer(minLength: 4)
+            }
+            .foregroundStyle(Theme.tTertiary)
+        }
+        .padding(9)
+        .background(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(statusTint.opacity(0.07))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .strokeBorder(statusTint.opacity(0.16), lineWidth: 0.5)
+                )
+        )
     }
 
     func modelBadge(_ model: String, tint: Color) -> some View {
@@ -968,7 +1782,8 @@ struct PanelView: View {
     }
 
     func tokenModelTotal(_ m: TokenModelStat, reasonIncludedInOutput: Bool = false) -> Int {
-        m.in + m.out + m.cr + m.cw + (reasonIncludedInOutput ? 0 : m.reason)
+        if let tokens = m.tokens, tokens > 0 { return tokens }
+        return m.in + m.out + m.cr + m.cw + (reasonIncludedInOutput ? 0 : m.reason)
     }
 
     func tokenModelHit(_ m: TokenModelStat) -> Double {
@@ -976,7 +1791,7 @@ struct PanelView: View {
         return denom > 0 ? Double(m.cr) / Double(denom) * 100 : 0
     }
 
-    func cardHead(_ title: String, tint: Color, sessions: Int = 0) -> some View {
+    func cardHead(_ title: String, tint: Color, sessions: Int = 0, toolID: String? = nil) -> some View {
         HStack(spacing: 7) {
             Circle().fill(tint.gradient).frame(width: 8, height: 8)
                 .shadow(color: tint.opacity(0.6), radius: 3)
@@ -989,17 +1804,40 @@ struct PanelView: View {
                     .background(Capsule().fill(tint.opacity(0.12)))
             }
             Spacer()
+            if let toolID {
+                cardCopyButton(toolID: toolID, tint: tint)
+            }
         }
     }
 
     // 无命中环的卡头(Grok 无缓存命中数据)。
-    func cardHeadPlain(_ title: String, tint: Color) -> some View {
+    func cardHeadPlain(_ title: String, tint: Color, toolID: String? = nil) -> some View {
         HStack(spacing: 7) {
             Circle().fill(tint.gradient).frame(width: 8, height: 8)
                 .shadow(color: tint.opacity(0.6), radius: 3)
             Text(title).font(.system(size: Theme.fontSize(14), weight: .bold))
             Spacer()
+            if let toolID {
+                cardCopyButton(toolID: toolID, tint: tint)
+            }
         }
+    }
+
+    @ViewBuilder
+    private func cardCopyButton(toolID: String, tint: Color) -> some View {
+        let done = copiedToolID == toolID
+        Button {
+            copySingleToolImage(id: toolID)
+        } label: {
+            Image(systemName: done ? "checkmark" : "photo.on.rectangle")
+                .font(.system(size: Theme.fontSize(10), weight: .semibold))
+                .foregroundStyle(done ? tint : Theme.tTertiary)
+                .frame(width: 22, height: 22)
+                .background(Circle().fill(Color.primary.opacity(done ? 0.10 : 0.06)))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .tip(done ? "已复制图片" : "复制此工具用量图")
     }
 
     @ViewBuilder
@@ -1047,7 +1885,9 @@ struct PanelView: View {
 
     @ViewBuilder
     func tokenModelDisclosure(_ models: [TokenModelStat], open: Binding<Bool>, tint: Color,
-                              reasonIncludedInOutput: Bool = false) -> some View {
+                              reasonIncludedInOutput: Bool = false,
+                              inclusiveIO: Bool = false,
+                              periodLabel: String? = nil) -> some View {
         Button {
             open.wrappedValue.toggle()
         } label: {
@@ -1067,52 +1907,68 @@ struct PanelView: View {
         .buttonStyle(.plain)
         if open.wrappedValue {
             VStack(alignment: .leading, spacing: 6) {
-                Text("按模型 · \(sel.label)")
+                Text("按模型 · \(periodLabel ?? sel.label)")
                     .font(.system(size: Theme.fontSize(11), weight: .semibold))
                     .foregroundStyle(Theme.tSecondary)
                 ForEach(models) { m in
                     let total = tokenModelTotal(m, reasonIncludedInOutput: reasonIncludedInOutput)
                     let hit = tokenModelHit(m)
+                    let hasBreakdown = m.in + m.out + m.cr + m.cw + m.reason > 0
+                        || m.cost > 0 || m.pin > 0 || m.pout > 0
                     let isExpanded = expandedModels.contains(m.id)
                     VStack(alignment: .leading, spacing: 0) {
                         Button {
+                            guard hasBreakdown else { return }
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 if isExpanded { expandedModels.remove(m.id) }
                                 else { expandedModels.insert(m.id) }
                             }
                         } label: {
-                            HStack(spacing: 7) {
-                                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                                    .font(.system(size: Theme.fontSize(7), weight: .bold))
-                                    .foregroundStyle(Theme.tTertiary)
-                                    .frame(width: 8)
+                            HStack(alignment: .top, spacing: 7) {
+                                if hasBreakdown {
+                                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                                        .font(.system(size: Theme.fontSize(7), weight: .bold))
+                                        .foregroundStyle(Theme.tTertiary)
+                                        .frame(width: 8, height: 16)
+                                } else {
+                                    Color.clear.frame(width: 8, height: 16)
+                                }
                                 Circle().fill(tint.opacity(0.7)).frame(width: 5, height: 5)
+                                    .padding(.top, 5)
                                 Text(m.name).font(.system(size: Theme.fontSize(11.5))).foregroundStyle(Theme.tPrimary)
-                                    .lineLimit(1)
-                                Spacer(minLength: 4)
-                                Text(Fmt.human(total))
-                                    .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
-                                    .foregroundStyle(Theme.tTertiary)
-                                if hit > 0 {
-                                    Text(String(format: "%.0f%%", hit))
+                                    .lineLimit(2)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .layoutPriority(1)
+                                Spacer(minLength: 6)
+                                HStack(spacing: 6) {
+                                    Text(Fmt.human(total))
                                         .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
                                         .foregroundStyle(Theme.tTertiary)
-                                        .padding(.horizontal, 4).padding(.vertical, 1)
-                                        .background(Capsule().fill(Color.primary.opacity(0.06)))
+                                    if hit > 0 {
+                                        Text(String(format: "%.0f%%", hit))
+                                            .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
+                                            .foregroundStyle(Theme.tTertiary)
+                                            .padding(.horizontal, 4).padding(.vertical, 1)
+                                            .background(Capsule().fill(Color.primary.opacity(0.06)))
+                                    }
+                                    if m.cost > 0 {
+                                        Text(String(format: "$%.2f", m.cost))
+                                            .font(.system(size: Theme.fontSize(11.5), weight: .semibold, design: .monospaced))
+                                            .foregroundStyle(Theme.tPrimary)
+                                    }
                                 }
-                                if m.cost > 0 {
-                                    Text(String(format: "$%.2f", m.cost))
-                                        .font(.system(size: Theme.fontSize(11.5), weight: .semibold, design: .monospaced))
-                                        .foregroundStyle(Theme.tPrimary)
-                                }
+                                .fixedSize(horizontal: true, vertical: false)
                             }
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        if isExpanded {
-                            modelDetailRow(tokIn: m.in, tokOut: m.out, tokCR: m.cr, tokCW: m.cw,
+                        if isExpanded && hasBreakdown {
+                            modelDetailRow(tokIn: inclusiveIO ? m.in + m.cr + m.cw : m.in,
+                                           tokOut: inclusiveIO ? m.out + m.reason : m.out,
+                                           tokCR: m.cr, tokCW: m.cw,
                                            tokReason: m.reason,
-                                           pin: m.pin, pout: m.pout, hit: hit, tint: tint)
+                                           pin: m.pin, pout: m.pout, hit: hit, tint: tint,
+                                           componentsAreSubtotals: inclusiveIO)
                         }
                     }
                 }
@@ -1124,7 +1980,12 @@ struct PanelView: View {
     }
 
     @ViewBuilder
-    func modelDisclosure(_ models: [ModelRow], open: Binding<Bool>, tint: Color) -> some View {
+    func modelDisclosure(
+        _ models: [ModelRow],
+        open: Binding<Bool>,
+        tint: Color,
+        periodLabel: String? = nil
+    ) -> some View {
         Button {
             open.wrappedValue.toggle()
         } label: {
@@ -1144,7 +2005,7 @@ struct PanelView: View {
         .buttonStyle(.plain)
         if open.wrappedValue {
             VStack(alignment: .leading, spacing: 6) {
-                Text("按模型 · \(sel.label)")
+                Text("按模型 · \(periodLabel ?? sel.label)")
                     .font(.system(size: Theme.fontSize(11), weight: .semibold))
                     .foregroundStyle(Theme.tSecondary)
                 ForEach(models) { m in
@@ -1156,30 +2017,36 @@ struct PanelView: View {
                                 else { expandedModels.insert(m.id) }
                             }
                         } label: {
-                            HStack(spacing: 7) {
+                            HStack(alignment: .top, spacing: 7) {
                                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                                     .font(.system(size: Theme.fontSize(7), weight: .bold))
                                     .foregroundStyle(Theme.tTertiary)
-                                    .frame(width: 8)
+                                    .frame(width: 8, height: 16)
                                 Circle().fill(tint.opacity(0.7)).frame(width: 5, height: 5)
+                                    .padding(.top, 5)
                                 Text(m.name).font(.system(size: Theme.fontSize(11.5))).foregroundStyle(Theme.tPrimary)
-                                    .lineLimit(1)
-                                Spacer(minLength: 4)
-                                if m.total > 0 {
-                                    Text(Fmt.human(m.total))
-                                        .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
-                                        .foregroundStyle(Theme.tTertiary)
+                                    .lineLimit(2)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .layoutPriority(1)
+                                Spacer(minLength: 6)
+                                HStack(spacing: 6) {
+                                    if m.total > 0 {
+                                        Text(Fmt.human(m.total))
+                                            .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
+                                            .foregroundStyle(Theme.tTertiary)
+                                    }
+                                    if m.hit > 0 {
+                                        Text(String(format: "%.0f%%", m.hit))
+                                            .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
+                                            .foregroundStyle(Theme.tTertiary)
+                                            .padding(.horizontal, 4).padding(.vertical, 1)
+                                            .background(Capsule().fill(Color.primary.opacity(0.06)))
+                                    }
+                                    Text(String(format: "$%.2f", m.cost))
+                                        .font(.system(size: Theme.fontSize(11.5), weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(Theme.tPrimary)
                                 }
-                                if m.hit > 0 {
-                                    Text(String(format: "%.0f%%", m.hit))
-                                        .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
-                                        .foregroundStyle(Theme.tTertiary)
-                                        .padding(.horizontal, 4).padding(.vertical, 1)
-                                        .background(Capsule().fill(Color.primary.opacity(0.06)))
-                                }
-                                Text(String(format: "$%.2f", m.cost))
-                                    .font(.system(size: Theme.fontSize(11.5), weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(Theme.tPrimary)
+                                .fixedSize(horizontal: true, vertical: false)
                             }
                             .contentShape(Rectangle())
                         }
@@ -1199,7 +2066,8 @@ struct PanelView: View {
 
     @ViewBuilder
     func modelDetailRow(tokIn: Int, tokOut: Int, tokCR: Int, tokCW: Int, tokReason: Int = 0,
-                         pin: Double, pout: Double, hit: Double = 0, tint: Color) -> some View {
+                         pin: Double, pout: Double, hit: Double = 0, tint: Color,
+                         componentsAreSubtotals: Bool = false) -> some View {
         let tagFont = Font.system(size: 9, weight: .medium, design: .monospaced)
         let labelFont = Font.system(size: 8.5)
         let bg = tint.opacity(0.08)
@@ -1210,13 +2078,16 @@ struct PanelView: View {
                 detailTag("↓ \(Fmt.human(tokIn))", label: "输入", tagFont: tagFont, labelFont: labelFont, bg: bg, border: border)
                 detailTag("↑ \(Fmt.human(tokOut))", label: "输出", tagFont: tagFont, labelFont: labelFont, bg: bg, border: border)
                 if tokCR > 0 {
-                    detailTag("⚡ \(Fmt.human(tokCR))", label: "缓存读", tagFont: tagFont, labelFont: labelFont, bg: bg, border: border)
+                    detailTag("⚡ \(Fmt.human(tokCR))", label: componentsAreSubtotals ? "其中缓存读" : "缓存读",
+                              tagFont: tagFont, labelFont: labelFont, bg: bg, border: border)
                 }
                 if tokCW > 0 {
-                    detailTag("✎ \(Fmt.human(tokCW))", label: "缓存写", tagFont: tagFont, labelFont: labelFont, bg: bg, border: border)
+                    detailTag("✎ \(Fmt.human(tokCW))", label: componentsAreSubtotals ? "其中缓存写" : "缓存写",
+                              tagFont: tagFont, labelFont: labelFont, bg: bg, border: border)
                 }
                 if tokReason > 0 {
-                    detailTag("◉ \(Fmt.human(tokReason))", label: "推理", tagFont: tagFont, labelFont: labelFont, bg: bg, border: border)
+                    detailTag("◉ \(Fmt.human(tokReason))", label: componentsAreSubtotals ? "其中推理" : "推理",
+                              tagFont: tagFont, labelFont: labelFont, bg: bg, border: border)
                 }
                 if hit > 0 {
                     HStack(spacing: 2) {
@@ -1309,7 +2180,7 @@ struct PanelView: View {
                         .foregroundStyle(Theme.tTertiary)
                 }
                 Spacer()
-                Text(String(format: "%.0f%%", pct))
+                Text(SubscriptionQuotaPresentation.remainingLabel(pct))
                     .font(.system(size: Theme.fontSize(12), weight: .semibold, design: .monospaced))
                     .foregroundStyle(pct <= 15 ? AnyShapeStyle(.red) : AnyShapeStyle(Theme.tPrimary))
                 // 无重置时间时不显示「· ?」，避免分产品行误导。
@@ -1345,7 +2216,20 @@ struct PanelView: View {
             Spacer()
         }
         .foregroundStyle(stale ? Color.orange.opacity(0.88) : Theme.tTertiary)
-        .help(stale ? "等待 Claude Desktop 写入新的额度缓存" : "来自 Claude Desktop 本地缓存")
+        .help(stale ? "等待 Claude Code 更新额度" : "来自 Claude Code CLI 或 Desktop")
+    }
+
+    func codexQuotaStatus(_ stat: CodexStat) -> some View {
+        let updated = stat.q_updated.map { Fmt.reset($0) } ?? "更新时间未知"
+        return HStack(spacing: 5) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: Theme.fontSize(9)))
+            Text("额度数据已过期 · 更新于 \(updated)")
+                .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
+            Spacer()
+        }
+        .foregroundStyle(Color.orange.opacity(0.88))
+        .help("等待 Codex 写入新的额度读数")
     }
 
     var footer: some View {
@@ -1353,12 +2237,62 @@ struct PanelView: View {
             disclaimer
             Spacer()
             KeepAwakeMenu(ka: store.keepAwake)
+            IconButton(
+                icon: copyFeedback ? "checkmark" : "photo.on.rectangle",
+                label: copyFeedback ? "已复制" : "复制"
+            ) {
+                copyUsageImage()
+            }
             IconButton(icon: "arrow.clockwise", label: "刷新") { store.refresh() }
             IconButton(icon: "power", label: "退出") { NSApp.terminate(nil) }
         }
     }
 
+    /// Generate a multi-tool share card image for the current range.
+    private func copyUsageImage() {
+        guard let usage = store.usage else { return }
+        let ok = UsageShareImage.copyToPasteboard(
+            usage: usage,
+            range: sel,
+            visibility: toolVisibility,
+            updated: store.lastUpdated
+        )
+        guard ok else { return }
+        copiedToolID = nil
+        copyFeedback = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+            copyFeedback = false
+        }
+    }
+
+    /// Generate a single-tool share card (native-style) for one agent/card.
+    private func copySingleToolImage(id: String) {
+        guard let usage = store.usage,
+              let line = UsageSummaryBuilder.line(
+                forToolID: id, usage: usage, range: sel, visibility: toolVisibility
+              ) else { return }
+        let ok = UsageShareImage.copyToPasteboard(
+            line: line, range: sel, updated: store.lastUpdated
+        )
+        guard ok else { return }
+        copyFeedback = false
+        copiedToolID = id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+            if copiedToolID == id { copiedToolID = nil }
+        }
+    }
+
     @State private var updateSpin = false
+
+    private var updateRing: some View {
+        Circle()
+            .strokeBorder(
+                AngularGradient(colors: [.cyan, .blue, .purple, .cyan],
+                               center: .center),
+                lineWidth: 2
+            )
+            .frame(width: 26, height: 26)
+    }
 
     @ViewBuilder
     private var updatePill: some View {
@@ -1366,19 +2300,20 @@ struct PanelView: View {
         case .available(let tag, _, _):
             Button { updater.performUpdate() } label: {
                 ZStack {
-                    Circle()
-                        .strokeBorder(
-                            AngularGradient(colors: [.cyan, .blue, .purple, .cyan],
-                                           center: .center),
-                            lineWidth: 2
-                        )
-                        .frame(width: 26, height: 26)
-                        .rotationEffect(.degrees(updateSpin ? 360 : 0))
-                        .onAppear {
-                            withAnimation(.linear(duration: 2.5).repeatForever(autoreverses: false)) {
-                                updateSpin = true
+                    // 面板关着时退化成静态圆环。这棵视图树永不释放,
+                    // repeatForever 会一直驱动 CoreAnimation 显示周期空烧 CPU。
+                    if store.popoverVisible {
+                        updateRing
+                            .rotationEffect(.degrees(updateSpin ? 360 : 0))
+                            .onAppear {
+                                withAnimation(.linear(duration: 2.5).repeatForever(autoreverses: false)) {
+                                    updateSpin = true
+                                }
                             }
-                        }
+                            .onDisappear { updateSpin = false }
+                    } else {
+                        updateRing
+                    }
                     Image(systemName: "arrow.up")
                         .font(.system(size: Theme.fontSize(10), weight: .bold))
                         .foregroundStyle(.white)
@@ -1435,6 +2370,15 @@ struct PanelView: View {
     @State private var debugOutput = ""
     @State private var debugExpanded = false
     @State private var cachedRemoteUrl = ""
+    @State private var sub2APIBaseURL = ""
+    @State private var sub2APIKey = ""
+    @State private var sub2APIKeyStored = false
+    @State private var zaiRegion = "global"
+    @State private var zaiKey = ""
+    @State private var zaiKeyStored = false
+    @State private var providerSettingsResult = ""
+    @State private var grokBotAuthorizing = false
+    @State private var grokBotAuthorizationResult = ""
     @AppStorage("syncDir") private var syncDir = ""
     @AppStorage("deviceName") private var deviceName = ""
     @State private var configuredDeviceID: String?
@@ -1453,6 +2397,7 @@ struct PanelView: View {
             HStack(alignment: .top, spacing: 11) {
                 VStack(alignment: .leading, spacing: 11) {
                     settingsAgentsSection
+                    settingsProviderQuotaSection
                     settingsDiagnosticsSection
                     settingsPricingSection
                 }
@@ -1473,6 +2418,7 @@ struct PanelView: View {
         }
         .onAppear {
             loginItem.refresh()
+            loadProviderSettings()
             if let cfg = SyncManager.loadConfig() {
                 if let persistedID = Self.validSyncDeviceID(cfg.device_id) {
                     configuredDeviceID = persistedID
@@ -1505,6 +2451,46 @@ struct PanelView: View {
                 }
             }
         }
+    }
+
+    /// 窗口 → 开关的唯一映射。@AppStorage 只能是独立属性，所有读写都从这里走。
+    private func menuBarQuotaBinding(_ source: MenuBarQuotaSource) -> Binding<Bool> {
+        switch source {
+        case .claude5h: return $menuBarQuotaClaude5h
+        case .claudeWeek: return $menuBarQuotaClaudeWeek
+        case .claudeFable: return $menuBarQuotaClaudeFable
+        case .codex5h: return $menuBarQuotaCodex5h
+        case .codexWeek: return $menuBarQuotaCodexWeek
+        case .grok: return $menuBarQuotaGrok
+        }
+    }
+
+    /// 状态栏真会画出来的那几项。和 `metrics(in:)` 共用一个谓词，
+    /// 提示语和预览才不会宣布一个状态栏根本没画的组合。
+    private var menuBarQuotaSelectedSources: [MenuBarQuotaSource] {
+        MenuBarQuotaSource.allCases.filter {
+            guard menuBarQuotaBinding($0).wrappedValue else { return false }
+            guard let usage = store.usage else { return true }
+            return $0.isRenderable(in: usage)
+        }
+    }
+
+    /// 6 个开关拼成一个值，菜单栏刷新只挂一个 onChange。
+    private var menuBarQuotaDigest: String {
+        MenuBarQuotaSource.allCases
+            .map { menuBarQuotaBinding($0).wrappedValue ? "1" : "0" }
+            .joined()
+    }
+
+    private var menuBarQuotaHint: String {
+        let selected = menuBarQuotaSelectedSources
+        if selected.isEmpty { return "全部关闭，状态栏只留图标。" }
+        let shown = selected.prefix(2).map(\.label).joined(separator: " · ")
+        if selected.count > 2 {
+            let hidden = selected.dropFirst(2).map(\.label).joined(separator: "、")
+            return "双额度显示：\(shown)；\(hidden) 放不下。"
+        }
+        return "双额度显示：\(shown)。"
     }
 
     var settingsAppearanceSection: some View {
@@ -1553,13 +2539,19 @@ struct PanelView: View {
             settingsStackedValue("额度来源") {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 7),
                                     GridItem(.flexible(), spacing: 7)], spacing: 7) {
-                    settingsRow("Claude", tint: Theme.claude, isOn: $menuBarQuotaClaude)
-                    settingsRow("Codex", tint: Theme.codex, isOn: $menuBarQuotaCodex)
-                    settingsRow("Grok", tint: Theme.grok, isOn: $menuBarQuotaGrok)
+                    ForEach(MenuBarQuotaSource.allCases) { source in
+                        settingsRow(source.label, tint: source.themeColor,
+                                    isOn: menuBarQuotaBinding(source))
+                    }
                 }
             }
 
-            Text("只影响状态栏剩余额度，与「显示卡片」无关。双额度最多显示前两项；单额度只显示一项。全部关闭时状态栏只留图标，不再显示用量数字。")
+            Text(menuBarQuotaHint)
+                .font(.system(size: Theme.fontSize(9), weight: .medium))
+                .foregroundStyle(Theme.tSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("只影响状态栏剩余额度，与「显示卡片」无关。每项都是一个具体窗口：5h 是滚动的 5 小时窗口，周是本周配额。双额度按上面的顺序取前两项，单额度只显示剩得最少的那项。「符号」「圆点」两种样式会用沙漏标 5h、横块标周；其余样式只有数字，鼠标放到状态栏上能看到窗口全名。勾了但你的账号没有这个窗口、或者读数已过期，状态栏会跳过它。")
                 .font(.system(size: Theme.fontSize(8.5)))
                 .foregroundStyle(Theme.tTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1568,7 +2560,8 @@ struct PanelView: View {
                 Spacer()
                 MenuBarStylePreview(
                     style: MenuBarStyle(rawValue: menuBarStyle) ?? .system,
-                    density: MenuBarDensity(rawValue: menuBarDensity) ?? .full
+                    density: MenuBarDensity(rawValue: menuBarDensity) ?? .full,
+                    sources: Array(menuBarQuotaSelectedSources.prefix(2))
                 )
                 Spacer()
             }
@@ -1579,13 +2572,7 @@ struct PanelView: View {
         .onChange(of: menuBarDensity) { _ in
             (NSApp.delegate as? AppDelegate)?.updateStatusTitle()
         }
-        .onChange(of: menuBarQuotaClaude) { _ in
-            (NSApp.delegate as? AppDelegate)?.updateStatusTitle()
-        }
-        .onChange(of: menuBarQuotaCodex) { _ in
-            (NSApp.delegate as? AppDelegate)?.updateStatusTitle()
-        }
-        .onChange(of: menuBarQuotaGrok) { _ in
+        .onChange(of: menuBarQuotaDigest) { _ in
             (NSApp.delegate as? AppDelegate)?.updateStatusTitle()
         }
     }
@@ -1625,8 +2612,13 @@ struct PanelView: View {
                                 GridItem(.flexible(), spacing: 7)], spacing: 7) {
                 settingsRow("Claude", tint: Theme.claude, isOn: $showClaude)
                 settingsRow("Codex", tint: Theme.codex, isOn: $showCodex)
-                settingsRow("Gemini", tint: Theme.gemini, isOn: $showGemini)
+                settingsRow("Gemini / Antigravity", tint: Theme.gemini, isOn: $showGemini)
+                settingsRow("Cursor", tint: Theme.cursor, isOn: $showCursor)
+                settingsRow("Zed", tint: Theme.zed, isOn: $showZed)
+                settingsRow("Sub2API", tint: Theme.sub2api, isOn: $showSub2API)
+                settingsRow("z.ai / GLM", tint: Theme.zai, isOn: $showZai)
                 settingsRow("Grok", tint: Theme.grok, isOn: $showGrok)
+                settingsRow("Grok Bot", tint: Theme.grokBot, isOn: $showGrokBot)
                 settingsRow("Qoder Desktop", tint: Theme.qoder, isOn: $showQoder)
                 settingsRow("QoderWork", tint: Theme.qoderwork, isOn: $showQoderWork)
                 settingsRow("Qoder CLI", tint: Theme.qodercli, isOn: $showQoderCli)
@@ -1635,26 +2627,267 @@ struct PanelView: View {
                 settingsRow("MiMoCode", tint: Theme.mimocode, isOn: $showMimoCode)
                 settingsRow("OpenClaw", tint: Theme.openclaw, isOn: $showOpenClaw)
                 settingsRow("Pi", tint: Theme.pi, isOn: $showPi)
+                settingsRow("Prime Agent", tint: Theme.primeAgent, isOn: $showPrimeAgent)
                 settingsRow("WorkBuddy", tint: Theme.workbuddy, isOn: $showWorkBuddy)
+                settingsRow("WorkBuddy Intl.", tint: Theme.workbuddyAI, isOn: $showWorkBuddyAI)
+                settingsRow("DeepSeek Harness", tint: Theme.deepseekHarness, isOn: $showDeepSeekHarness)
                 settingsRow("OpenCode", tint: Theme.opencode, isOn: $showOpenCode)
                 settingsRow("Qwen Code", tint: Theme.qwencode, isOn: $showQwenCode)
+                settingsRow("千问办公", tint: Theme.qwenwork, isOn: $showQwenWork)
+                settingsRow("Kimi Code", tint: Theme.kimicode, isOn: $showKimiCode)
             }
         }
         .onChange(of: showQoder) { enabled in
             Self.setQoderIdeEnabled(enabled)
         }
+        .onChange(of: showGemini) { enabled in
+            Self.setProviderQuotaEnabled("antigravity", enabled)
+            store.refresh()
+        }
+        .onChange(of: showCursor) { enabled in
+            Self.setProviderQuotaEnabled("cursor", enabled)
+            store.refresh()
+        }
+        .onChange(of: showZed) { enabled in
+            Self.setProviderQuotaEnabled("zed", enabled)
+            store.refresh()
+        }
+        .onChange(of: showSub2API) { enabled in
+            Self.setProviderQuotaEnabled("sub2api", enabled)
+            store.refresh()
+        }
+        .onChange(of: showZai) { enabled in
+            Self.setProviderQuotaEnabled("zai", enabled)
+            store.refresh()
+        }
+    }
+
+    var settingsProviderQuotaSection: some View {
+        settingsSection("key.horizontal.fill", "Provider 额度") {
+            Text("Cursor 复用 Cursor.app 登录态，Zed 复用 Zed Keychain；两者无需在 Tokei 中保存密钥。显示对应卡片即允许查询。")
+                .font(.system(size: Theme.fontSize(8.5)))
+                .foregroundStyle(Theme.tTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            thinDivider
+
+            Text("Sub2API")
+                .font(.system(size: Theme.fontSize(10), weight: .semibold))
+                .foregroundStyle(Theme.sub2api)
+            providerSettingsField(
+                label: "Base URL",
+                placeholder: "https://api.example.com",
+                text: $sub2APIBaseURL
+            )
+            providerSettingsField(
+                label: "API Key",
+                placeholder: sub2APIKeyStored ? "已保存，留空不修改" : "Group API Key",
+                text: $sub2APIKey,
+                secure: true
+            )
+            if sub2APIKeyStored {
+                HStack {
+                    Spacer()
+                    settingsActionButton(icon: "trash", title: "清除 Sub2API 密钥") {
+                        clearProviderToken(.sub2api)
+                    }
+                }
+            }
+
+            thinDivider
+
+            Text("z.ai / GLM")
+                .font(.system(size: Theme.fontSize(10), weight: .semibold))
+                .foregroundStyle(Theme.zai)
+            HStack(spacing: 8) {
+                Text("区域")
+                    .font(.system(size: Theme.fontSize(9.5)))
+                    .foregroundStyle(Theme.tTertiary)
+                    .frame(width: 52, alignment: .leading)
+                Picker("z.ai 区域", selection: $zaiRegion) {
+                    Text("Global").tag("global")
+                    Text("BigModel CN").tag("bigmodel-cn")
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .controlSize(.mini)
+            }
+            providerSettingsField(
+                label: "API Key",
+                placeholder: zaiKeyStored ? "已保存，留空不修改" : "Z_AI_API_KEY",
+                text: $zaiKey,
+                secure: true
+            )
+            if zaiKeyStored {
+                HStack {
+                    Spacer()
+                    settingsActionButton(icon: "trash", title: "清除 z.ai 密钥") {
+                        clearProviderToken(.zai)
+                    }
+                }
+            }
+
+            HStack {
+                settingsActionButton(icon: "checkmark.circle", title: "保存 Provider 设置") {
+                    saveProviderSettings()
+                }
+                Spacer()
+                if !providerSettingsResult.isEmpty {
+                    Text(providerSettingsResult)
+                        .font(.system(size: Theme.fontSize(8.5)))
+                        .foregroundStyle(providerSettingsResult == "已保存" ? Color.green : Color.orange)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func providerSettingsField(
+        label: String,
+        placeholder: String,
+        text: Binding<String>,
+        secure: Bool = false
+    ) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.system(size: Theme.fontSize(9.5)))
+                .foregroundStyle(Theme.tTertiary)
+                .frame(width: 52, alignment: .leading)
+            Group {
+                if secure {
+                    SecureField(placeholder, text: text)
+                } else {
+                    TextField(placeholder, text: text)
+                }
+            }
+            .textFieldStyle(.plain)
+            .font(.system(size: Theme.fontSize(9.5), design: .monospaced))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.primary.opacity(0.05))
+            )
+        }
+    }
+
+    private func loadProviderSettings() {
+        sub2APIBaseURL = SyncManager.providerSetting("sub2api_base_url") ?? ""
+        zaiRegion = SyncManager.providerSetting("zai_region") ?? "global"
+        sub2APIKeyStored = ProviderCredentialStore.token(for: .sub2api) != nil
+        zaiKeyStored = ProviderCredentialStore.token(for: .zai) != nil
+    }
+
+    private func saveProviderSettings() {
+        let baseURL = sub2APIBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard baseURL.isEmpty || Self.validSub2APIBaseURL(baseURL) else {
+            providerSettingsResult = "Sub2API URL 仅支持 HTTPS 或本机 HTTP"
+            return
+        }
+        let savedURL = SyncManager.setProviderSetting(
+            baseURL.isEmpty ? nil : baseURL,
+            forKey: "sub2api_base_url"
+        )
+        let savedRegion = SyncManager.setProviderSetting(zaiRegion, forKey: "zai_region")
+        let savedSub2APIKey = sub2APIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || ProviderCredentialStore.setToken(sub2APIKey, for: .sub2api)
+        let savedZaiKey = zaiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || ProviderCredentialStore.setToken(zaiKey, for: .zai)
+        guard savedURL, savedRegion, savedSub2APIKey, savedZaiKey else {
+            providerSettingsResult = "保存失败"
+            return
+        }
+        sub2APIKey = ""
+        zaiKey = ""
+        loadProviderSettings()
+        providerSettingsResult = "已保存"
+        store.refresh()
+    }
+
+    private func clearProviderToken(_ provider: ProviderSecret) {
+        guard ProviderCredentialStore.setToken("", for: provider) else {
+            providerSettingsResult = "清除失败"
+            return
+        }
+        loadProviderSettings()
+        providerSettingsResult = "已清除"
+        store.refresh()
+    }
+
+    private static func validSub2APIBaseURL(_ value: String) -> Bool {
+        guard let components = URLComponents(string: value),
+              let scheme = components.scheme?.lowercased(),
+              let host = components.host?.lowercased(),
+              components.user == nil, components.password == nil,
+              components.query == nil, components.fragment == nil else { return false }
+        if scheme == "https" { return true }
+        guard scheme == "http" else { return false }
+        return host == "localhost" || host == "127.0.0.1" || host == "::1"
     }
 
     var settingsPrivacySection: some View {
         settingsSection("lock.shield", "隐私与额度") {
+            settingsToggleRow("Claude Code CLI 额度查询", isOn: $claudeCLIQuotaEnabled)
+            Text("默认关闭。开启后仅在 Claude Desktop 缓存不可用时，使用 Claude Code CLI 已有登录态向 Anthropic 查询 5h、周及模型额度，并缓存 5 分钟。登录 Token 只在内存中使用，不写入 Tokei 文件。")
+                .font(.system(size: Theme.fontSize(8.5)))
+                .foregroundStyle(Theme.tTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            thinDivider
+
             settingsToggleRow("Grok 实时额度查询", isOn: $grokLiveQuotaEnabled)
             Text("默认只读本机 Grok 日志中的额度快照，不访问网络。开启后才会用本地登录凭据请求 Grok 账单接口，以便拿到最新剩余额度。")
                 .font(.system(size: Theme.fontSize(8.5)))
                 .foregroundStyle(Theme.tTertiary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            thinDivider
+
+            settingsToggleRow("Grok Bot 额度查询", isOn: $grokBotQuotaEnabled)
+            Text("开启后使用 Grok Bot 自身登录态查询官方额度和 Token，并按 5 分钟缓存。首次使用时确认一次系统授权；专用只读助手会保留授权，Tokei 重启和升级无需重复确认。登录 Token 仅在助手进程内存中使用。")
+                .font(.system(size: Theme.fontSize(8.5)))
+                .foregroundStyle(Theme.tTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            if grokBotQuotaEnabled {
+                HStack(spacing: 8) {
+                    settingsActionButton(
+                        icon: "key.fill",
+                        title: grokBotAuthorizing ? "等待授权…" : "授权 Grok Bot"
+                    ) {
+                        authorizeGrokBotQuota()
+                    }
+                    .disabled(grokBotAuthorizing)
+                    if grokBotAuthorizing { ProgressView().controlSize(.mini) }
+                    if !grokBotAuthorizationResult.isEmpty {
+                        Text(grokBotAuthorizationResult)
+                            .font(.system(size: Theme.fontSize(8.5)))
+                            .foregroundStyle(Theme.tTertiary)
+                            .lineLimit(2)
+                    }
+                }
+            }
+
+            thinDivider
+
+            settingsToggleRow("千问办公额度查询", isOn: $qwenWorkQuotaEnabled)
+            Text("默认关闭。开启后，Tokei 仅连接千问办公桌面端在本机 127.0.0.1 提供的受保护接口；千问办公可能随之向官方服务刷新额度。Tokei 不读取或保存登录凭据，需保持千问办公已登录并运行。")
+                .font(.system(size: Theme.fontSize(8.5)))
+                .foregroundStyle(Theme.tTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .onChange(of: claudeCLIQuotaEnabled) { _ in
+            store.refresh()
         }
         .onChange(of: grokLiveQuotaEnabled) { enabled in
             Self.setGrokLiveQuotaEnabled(enabled)
+            store.refresh()
+        }
+        .onChange(of: grokBotQuotaEnabled) { enabled in
+            Self.setProviderQuotaEnabled("grok_bot", enabled)
+            store.refresh()
+        }
+        .onChange(of: qwenWorkQuotaEnabled) { enabled in
+            Self.setQwenWorkQuotaEnabled(enabled)
             store.refresh()
         }
     }
@@ -1665,6 +2898,54 @@ struct PanelView: View {
 
     private static func setGrokLiveQuotaEnabled(_ enabled: Bool) {
         SyncManager.setGrokLiveQuotaEnabled(enabled)
+    }
+
+    private static func setQwenWorkQuotaEnabled(_ enabled: Bool) {
+        SyncManager.setQwenWorkQuotaEnabled(enabled)
+    }
+
+    private static func setProviderQuotaEnabled(_ provider: String, _ enabled: Bool) {
+        SyncManager.setProviderQuotaEnabled(provider, enabled: enabled)
+    }
+
+    private func authorizeGrokBotQuota() {
+        guard !grokBotAuthorizing else { return }
+        guard let executable = GrokBotHelperManager.installIfNeeded() else {
+            grokBotAuthorizationResult = "授权助手不可用，请重新安装 Tokei"
+            return
+        }
+        grokBotAuthorizing = true
+        grokBotAuthorizationResult = ""
+        DispatchQueue.global(qos: .userInitiated).async {
+            func run(_ argument: String) -> Bool {
+                let process = Process()
+                process.executableURL = executable
+                process.arguments = [argument]
+                process.standardInput = FileHandle.nullDevice
+                process.standardOutput = FileHandle.nullDevice
+                process.standardError = FileHandle.nullDevice
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                    return process.terminationStatus == 0
+                } catch {
+                    return false
+                }
+            }
+            let interactiveSucceeded = run("--grok-bot-authorize")
+            let persistentSucceeded = interactiveSucceeded && run("--grok-bot-verify")
+            DispatchQueue.main.async {
+                grokBotAuthorizing = false
+                if persistentSucceeded {
+                    grokBotAuthorizationResult = "授权成功，可在 Grok Bot 卡片查看"
+                    store.refresh()
+                } else if interactiveSucceeded {
+                    grokBotAuthorizationResult = "仅允许了本次读取，请重新授权并选择“始终允许”"
+                } else {
+                    grokBotAuthorizationResult = "未授权，或 Grok Bot 尚未登录"
+                }
+            }
+        }
     }
 
     /// 启动时把 UI 开关(showQoderIde)的当前值落盘到 config.json。
@@ -1679,6 +2960,29 @@ struct PanelView: View {
     static func syncGrokLiveQuotaConfigOnLaunch() {
         let enabled = UserDefaults.standard.object(forKey: "grokLiveQuotaEnabled") as? Bool ?? false
         setGrokLiveQuotaEnabled(enabled)
+    }
+
+    /// 启动时同步千问办公额度开关（默认关）。
+    static func syncQwenWorkQuotaConfigOnLaunch() {
+        let enabled = UserDefaults.standard.object(forKey: "qwenWorkQuotaEnabled") as? Bool ?? false
+        setQwenWorkQuotaEnabled(enabled)
+    }
+
+    /// 新 Provider 默认关闭；Antigravity 跟随现有 Gemini / Antigravity 卡片开关。
+    static func syncProviderQuotaConfigOnLaunch() {
+        let defaults = UserDefaults.standard
+        let settings: [(String, String, Bool)] = [
+            ("antigravity", "showGemini", true),
+            ("cursor", "showCursor", false),
+            ("grok_bot", "grokBotQuotaEnabled", false),
+            ("zed", "showZed", false),
+            ("sub2api", "showSub2API", false),
+            ("zai", "showZai", false),
+        ]
+        for (provider, key, fallback) in settings {
+            let enabled = defaults.object(forKey: key) as? Bool ?? fallback
+            setProviderQuotaEnabled(provider, enabled)
+        }
     }
 
     var settingsPricingSection: some View {
@@ -1860,14 +3164,21 @@ struct PanelView: View {
                         .disabled(store.syncing)
                 }
 
-                HStack(spacing: 8) {
-                    settingsActionButton(icon: "arrow.triangle.2.circlepath", title: store.syncing ? "同步中" : "同步") {
+                HStack(spacing: 6) {
+                    settingsActionButton(
+                        icon: "arrow.triangle.2.circlepath",
+                        title: store.syncing ? "同步中" : "同步",
+                        width: 86
+                    ) {
                         if saveSync() { store.doSync() }
                     }
                     .disabled(store.syncing || syncDir.isEmpty)
 
-                    Spacer()
-                    Text("自动").font(.system(size: Theme.fontSize(10))).foregroundStyle(Theme.tTertiary)
+                    Spacer(minLength: 6)
+                    Text("自动")
+                        .font(.system(size: Theme.fontSize(10)))
+                        .foregroundStyle(Theme.tTertiary)
+                        .fixedSize(horizontal: true, vertical: false)
                     Toggle("", isOn: $autoSync)
                         .toggleStyle(.switch).controlSize(.mini).labelsHidden()
                         .disabled(store.syncing)
@@ -1883,7 +3194,7 @@ struct PanelView: View {
                             }
                         }
                         .pickerStyle(.segmented)
-                        .frame(width: 112)
+                        .frame(width: 104)
                         .controlSize(.mini)
                         .disabled(store.syncing)
                         .onChange(of: syncInterval) { v in
@@ -2099,7 +3410,12 @@ struct PanelView: View {
         )
     }
 
-    func settingsActionButton(icon: String, title: String, action: @escaping () -> Void) -> some View {
+    func settingsActionButton(
+        icon: String,
+        title: String,
+        width: CGFloat? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Image(systemName: icon).font(.system(size: Theme.fontSize(9)))
@@ -2108,6 +3424,7 @@ struct PanelView: View {
             .foregroundStyle(Theme.tPrimary)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
+            .frame(width: width)
             .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(Color.primary.opacity(0.08)))
         }
@@ -2301,8 +3618,11 @@ struct PanelView: View {
 
         if let data = result.stdout.data(using: .utf8),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            let tools = ["claude", "codex", "gemini", "grok", "qoder", "qoderwork", "hermes",
-                         "zcode", "mimocode", "openclaw", "pi", "workbuddy", "opencode", "qwencode"]
+            let tools = ["claude", "codex", "gemini", "antigravity", "cursor", "zed",
+                         "sub2api", "zai", "grok", "grok_bot", "qoder", "qoderwork", "hermes",
+                         "zcode", "mimocode", "openclaw", "pi", "workbuddy", "workbuddy_ai",
+                         "deepseek_harness",
+                         "opencode", "qwencode", "qwenwork", "kimicode", "prime_agent"]
                 .filter { json[$0] != nil }
                 .joined(separator: ",")
             lines.append("json: ok tools: \(tools)")
@@ -2329,7 +3649,9 @@ struct PanelView: View {
         return lines.joined(separator: "\n")
     }
 
-    static let buildVersion = "2026.0615"
+    static var buildVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "TokeiBuildDate") as? String ?? "未打包"
+    }
 
     static var skillPath: String {
         return "https://raw.githubusercontent.com/cclank/tokei/main/skills/tokei-setup.md"

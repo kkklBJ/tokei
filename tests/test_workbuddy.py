@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from datetime import timedelta
 from pathlib import Path
+from unittest import mock
 
 from test_codex_limits import USAGE
 
@@ -92,20 +93,25 @@ class WorkBuddyUsageRecordTests(unittest.TestCase):
 
 
 class WorkBuddyScanTests(unittest.TestCase):
-    def test_replay_is_deduped_but_multiple_calls_in_same_trace_are_kept(self):
+    def test_domestic_and_international_editions_are_scanned_separately(self):
         timestamp = 1_704_672_000_000
         first = workbuddy_item("item-1", timestamp, 100, 10, cached=40)
         replay = workbuddy_item("item-1", timestamp, 100, 10, cached=40)
         second = workbuddy_item("item-2", timestamp + 1_000, 80, 5, cached=20)
+        international = workbuddy_item("item-3", timestamp + 2_000, 50, 5, cached=10)
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "a").mkdir()
-            (root / "b").mkdir()
-            (root / "a" / "session-1.jsonl").write_text(
+            domestic = root / "domestic"
+            overseas = root / "international"
+            (domestic / "a").mkdir(parents=True)
+            (overseas / "b").mkdir(parents=True)
+            (domestic / "a" / "session-1.jsonl").write_text(
                 json.dumps(first) + "\n" + json.dumps(second) + "\n", encoding="utf-8")
-            (root / "b" / "session-1.jsonl").write_text(
-                json.dumps(replay) + "\n", encoding="utf-8")
+            (overseas / "b" / "session-1.jsonl").write_text(
+                json.dumps(replay) + "\n" + json.dumps(international) + "\n",
+                encoding="utf-8",
+            )
 
             local_day = USAGE._workbuddy_timestamp(timestamp).replace(
                 hour=0, minute=0, second=0, microsecond=0)
@@ -119,29 +125,49 @@ class WorkBuddyScanTests(unittest.TestCase):
                 "year": local_day.replace(month=1, day=1),
             }
             old_dir = USAGE.WORKBUDDY_DIR
+            old_ai_dir = USAGE.WORKBUDDY_AI_DIR
             old_pricing_db = USAGE._PRICING_DB
             old_override_models = USAGE._OV_MODELS
-            USAGE.WORKBUDDY_DIR = tmp
+            USAGE.WORKBUDDY_DIR = str(domestic)
+            USAGE.WORKBUDDY_AI_DIR = str(overseas)
             USAGE._PRICING_DB = {}
             USAGE._OV_MODELS = {}
             try:
-                result = USAGE.scan_workbuddy(bounds, {"v": USAGE._SCAN_CACHE_VERSION})
+                cache = {"v": USAGE._SCAN_CACHE_VERSION}
+                with mock.patch.object(USAGE, "ledger_touch"), \
+                     mock.patch.object(USAGE, "ledger_reconcile",
+                                       side_effect=lambda _tool, days: days):
+                    domestic_result = USAGE.scan_workbuddy(bounds, cache)
+                    international_result = USAGE.scan_workbuddy_ai(bounds, cache)
             finally:
                 USAGE.WORKBUDDY_DIR = old_dir
+                USAGE.WORKBUDDY_AI_DIR = old_ai_dir
                 USAGE._PRICING_DB = old_pricing_db
                 USAGE._OV_MODELS = old_override_models
 
-        all_usage = result["ranges"]["all"]
-        self.assertEqual(all_usage["in"], 120)
-        self.assertEqual(all_usage["cr"], 60)
-        self.assertEqual(all_usage["out"], 15)
-        self.assertEqual(all_usage["reason"], 0)
-        self.assertEqual(len(all_usage["sessions"]), 1)
-        self.assertEqual(USAGE.token_total(all_usage), 195)
-        self.assertIn("Hy3", all_usage["models"])
+        domestic_usage = domestic_result["ranges"]["all"]
+        self.assertEqual(domestic_usage["in"], 120)
+        self.assertEqual(domestic_usage["cr"], 60)
+        self.assertEqual(domestic_usage["out"], 15)
+        self.assertEqual(domestic_usage["reason"], 0)
+        self.assertEqual(len(domestic_usage["sessions"]), 1)
+        self.assertEqual(USAGE.token_total(domestic_usage), 195)
+        self.assertIn("Hy3", domestic_usage["models"])
         self.assertAlmostEqual(
-            all_usage["cost"],
+            domestic_usage["cost"],
             (120 * 0.14 + 60 * 0.035 + 15 * 0.58) / 1_000_000,
+            places=12,
+        )
+
+        international_usage = international_result["ranges"]["all"]
+        self.assertEqual(international_usage["in"], 100)
+        self.assertEqual(international_usage["cr"], 50)
+        self.assertEqual(international_usage["out"], 15)
+        self.assertEqual(len(international_usage["sessions"]), 1)
+        self.assertEqual(USAGE.token_total(international_usage), 165)
+        self.assertAlmostEqual(
+            international_usage["cost"],
+            (100 * 0.14 + 50 * 0.035 + 15 * 0.58) / 1_000_000,
             places=12,
         )
 
