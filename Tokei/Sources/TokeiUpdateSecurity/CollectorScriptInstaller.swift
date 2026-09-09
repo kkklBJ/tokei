@@ -7,10 +7,13 @@ public enum CollectorScriptInstaller {
         guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
         defer { handle.closeFile() }
         let data = handle.readData(ofLength: 4096)
-        guard let header = String(data: data, encoding: .utf8) else { return nil }
-        for line in header.split(whereSeparator: { $0.isNewline }) {
-            guard line.hasPrefix(revisionPrefix) else { continue }
-            return Int(line.dropFirst(revisionPrefix.count))
+        // Decode lines independently: the read limit may split a UTF-8
+        // character in a later comment without invalidating the ASCII revision.
+        for line in data.split(separator: 0x0A) {
+            guard let header = String(data: line, encoding: .utf8),
+                  header.hasPrefix(revisionPrefix) else { continue }
+            return Int(header.dropFirst(revisionPrefix.count)
+                .trimmingCharacters(in: .whitespacesAndNewlines))
         }
         return nil
     }

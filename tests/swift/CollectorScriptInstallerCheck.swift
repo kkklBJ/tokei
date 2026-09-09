@@ -65,7 +65,11 @@ struct CollectorScriptInstallerCheck {
 
         let newerDir = root.appendingPathComponent("newer-user")
         try fileManager.createDirectory(at: newerDir, withIntermediateDirectories: true)
-        let newerScript = "# TOKEI_COLLECTOR_REVISION=2\nprint('future parser')\n"
+        let revisionHeader = "# TOKEI_COLLECTOR_REVISION=2\n# "
+        // Byte 4096 cuts the first UTF-8 character; the script itself is valid.
+        let newerScript = revisionHeader
+            + String(repeating: "x", count: 4095 - revisionHeader.utf8.count)
+            + "中文\nprint('future parser')\n"
         try newerScript.write(
             to: newerDir.appendingPathComponent("usage.30s.py"),
             atomically: true,
@@ -87,6 +91,15 @@ struct CollectorScriptInstallerCheck {
         )
         try expect(preserved == newerScript,
                    "a collector with a newer revision must not be downgraded")
+        for headerOnly in ["# TOKEI_COLLECTOR_REVISION=2", "# TOKEI_COLLECTOR_REVISION=2\r\n"] {
+            try headerOnly.write(to: newerDir.appendingPathComponent("usage.30s.py"),
+                                 atomically: true, encoding: .utf8)
+            CollectorScriptInstaller.sync(resourceDir: resources.path, userDir: newerDir,
+                                          bundledRelease: "v1.0.38")
+            let actual = try String(contentsOf: newerDir.appendingPathComponent("usage.30s.py"),
+                                    encoding: .utf8)
+            try expect(actual == headerOnly, "EOF and CRLF revision headers must remain readable")
+        }
         print("Collector script installer checks passed")
     }
 }
