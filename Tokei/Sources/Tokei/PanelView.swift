@@ -6,7 +6,6 @@ struct PanelView: View {
     @ObservedObject var store: Store
     @ObservedObject var layout: PanelLayoutContext = PanelLayoutContext()
     var scrollable = true
-    var onContentSizeChange: ((CGSize) -> Void)?
     @State private var sel: RangeKey = .today
     @State private var claudeModelsOpen = false
     @State private var codexModelsOpen = false
@@ -103,8 +102,12 @@ struct PanelView: View {
     }
 
     private var visibleCount: Int {
-        guard let usage = store.usage else { return 0 }
-        return toolCards(for: usage).filter { $0.visible && $0.active }.count
+        [showClaude, showCodex, showGemini, showCursor, showZed, showSub2API, showZai,
+         showGrok, showGrokBot, showQoder, showQoderWork, showQoderCli, showHermes,
+         showZcode, showMimoCode,
+         showOpenClaw, showPi, showWorkBuddy, showWorkBuddyAI, showDeepSeekHarness,
+         showOpenCode, showQwenCode,
+         showQwenWork, showKimiCode, showPrimeAgent].filter { $0 }.count
     }
     private var hasMultipleDevices: Bool { store.syncEnabled && !store.peers.isEmpty }
     private var useWide: Bool { visibleCount > 2 }
@@ -116,7 +119,7 @@ struct PanelView: View {
     private var settingsMenuPickerWidth: CGFloat { settingsColumnWidth - 40 }
 
     private var maxPanelHeight: CGFloat {
-        layout.maximumHeight
+        layout.contentSize.height
     }
 
     private var projectPanelHeight: CGFloat {
@@ -134,10 +137,9 @@ struct PanelView: View {
     }
 
     var body: some View {
-        let preferredWidth = (mode == .settings || mode == .quotaHistory)
+        let w = (mode == .settings || mode == .quotaHistory)
             ? settingsPanelWidth
             : (mode == .cards ? panelWidth : max(panelWidth, 420))
-        let w = scrollable ? min(preferredWidth, layout.visibleFrame.width) : preferredWidth
         Group {
             if scrollable {
                 if mode == .projects {
@@ -147,7 +149,9 @@ struct PanelView: View {
                         .background(VisualEffect())
                         .environment(\.colorScheme, .dark)
                 } else {
-                    ContentFittingScrollView(width: w, maximumHeight: maxPanelHeight) { panelContent }
+                    ScrollView(.vertical, showsIndicators: false) { panelContent }
+                        .frame(width: w)
+                        .frame(maxHeight: maxPanelHeight)
                         .background(Theme.bg)
                         .background(VisualEffect())
                         .environment(\.colorScheme, .dark)
@@ -160,16 +164,13 @@ struct PanelView: View {
                     .environment(\.colorScheme, .dark)
             }
         }
+        .frame(
+            width: scrollable ? layout.contentSize.width : nil,
+            height: scrollable ? layout.contentSize.height : nil,
+            alignment: .top
+        )
         .background {
-            if scrollable {
-                GeometryReader { proxy in
-                    Color.clear.preference(key: PanelContentSizeKey.self, value: proxy.size)
-                }
-            }
-        }
-        .onPreferenceChange(PanelContentSizeKey.self) { size in
-            guard scrollable, size.width > 0, size.height > 1 else { return }
-            onContentSizeChange?(size)
+            if scrollable { Theme.bg }
         }
     }
 
@@ -520,7 +521,7 @@ struct PanelView: View {
                     }
                 }
                 if !standardCards.isEmpty {
-                    EqualHeightGrid(columns: standardCards.count == 1 ? 1 : 2) {
+                    EqualHeightGrid() {
                         ForEach(standardCards) { item in
                             Card(tint: item.tint) { item.content }
                                 .id(cardContentIdentity(for: item))
@@ -2232,21 +2233,9 @@ struct PanelView: View {
     }
 
     var footer: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 4) {
-                disclaimer.fixedSize(horizontal: true, vertical: false)
-                Spacer()
-                footerControls
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                disclaimer
-                HStack { Spacer(); footerControls }
-            }
-        }
-    }
-
-    private var footerControls: some View {
         HStack(spacing: 4) {
+            disclaimer
+            Spacer()
             KeepAwakeMenu(ka: store.keepAwake)
             IconButton(
                 icon: copyFeedback ? "checkmark" : "photo.on.rectangle",
@@ -2257,7 +2246,6 @@ struct PanelView: View {
             IconButton(icon: "arrow.clockwise", label: "刷新") { store.refresh() }
             IconButton(icon: "power", label: "退出") { NSApp.terminate(nil) }
         }
-        .fixedSize(horizontal: true, vertical: false)
     }
 
     /// Generate a multi-tool share card image for the current range.
