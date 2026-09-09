@@ -235,6 +235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     var timer: Timer?
     var globalMouseMonitor: Any?
     weak var popoverAnchorButton: NSStatusBarButton?
+    private var pendingPanelResize: DispatchWorkItem?
 
     // 菜单栏额度颜色(与面板 Theme.claude/codex/grok 一致)。
     static let claudeColor = NSColor(red: 0.92, green: 0.52, blue: 0.40, alpha: 1)
@@ -252,10 +253,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         let host = NSHostingController(rootView: PanelView(
             store: store,
-            layout: panelLayout
+            layout: panelLayout,
+            onContentSizeChange: { [weak self] size in self?.panelContentSizeDidChange(size) }
         ))
-        // 页面切换只改变固定画布内部内容，禁止 preferredContentSize 驱动
-        // NSPopover 在全屏 Space 中重新选择屏幕和锚点。
+        // 显式调整尺寸并保留锚点；不让 preferredContentSize 在全屏 Space 中重选屏幕。
         host.sizingOptions = []
         popover.contentViewController = host
         popover.contentSize = panelLayout.contentSize
@@ -470,6 +471,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             anchorVisibleFrame: button.window?.screen?.visibleFrame,
             fallbackVisibleFrame: NSScreen.screens.first?.visibleFrame
         )
+    }
+
+    private func panelContentSizeDidChange(_ size: CGSize) {
+        pendingPanelResize?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.panelLayout.recordContentSize(size)
+            PanelPlacement.resize(self.popover, to: self.panelLayout.contentSize,
+                                  anchorButton: self.popoverAnchorButton)
+        }
+        pendingPanelResize = work
+        // Apply after SwiftUI finishes this layout pass, coalescing measurements.
+        DispatchQueue.main.async(execute: work)
     }
 
     func popoverDidShow(_ notification: Notification) {

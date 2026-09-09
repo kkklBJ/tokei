@@ -32,7 +32,7 @@ class PopoverPlacementTests(unittest.TestCase):
             )
             self.assertIn("popover placement checks passed", result.stdout)
 
-    def test_app_uses_a_fixed_frame_without_reshowing_while_open(self):
+    def test_app_resizes_explicitly_without_reshowing_while_open(self):
         app_source = (ROOT / "Tokei/Sources/Tokei/main.swift").read_text()
         panel_source = (ROOT / "Tokei/Sources/Tokei/PanelView.swift").read_text()
 
@@ -41,7 +41,9 @@ class PopoverPlacementTests(unittest.TestCase):
         self.assertIn("host.sizingOptions = []", app_source)
         self.assertIn("popover.contentSize = panelLayout.contentSize", app_source)
         self.assertNotIn("reanchorPopover", app_source)
-        self.assertNotIn("PanelContentSizeKey", panel_source)
+        self.assertIn("ContentFittingScrollView", panel_source)
+        self.assertIn("PanelPlacement.resize(self.popover", app_source)
+        self.assertIn("$0.visible && $0.active", panel_source)
         self.assertNotIn("NSScreen.main?.visibleFrame", panel_source)
 
 
