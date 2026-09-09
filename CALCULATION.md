@@ -200,18 +200,17 @@ hit% = cached / input × 100
 
 ### DeepSeek V4 官方 API 潮汐价格
 
-官方 API 的 `deepseek-v4-flash` / `deepseek-v4-pro` 使用请求时间选择价格，时区固定为北京时间：
+DeepSeek Harness 中 `provider=deepseek-official` 的 `deepseek-v4-flash` / `deepseek-v4-pro` 使用每次请求的时间选择价格：
 
-- 高峰：09:00–12:00、14:00–18:00
-- 非高峰：其余时间
+- 高峰：工作日北京时间 09:00–12:00、14:00–18:00；周末及其余时间使用非高峰价
 - 涨价切点：2026-08-17 00:00（北京时间），切点时刻起使用新价格
 - 切点前旧价：Flash `$0.0028 / $0.14 / $0.28`，Pro `$0.003625 / $0.435 / $0.87`（缓存命中输入 / 缓存未命中输入 / 输出，均为每 1M token）
-- 价格单位：美元 / 1M token；内置值对应官方 DeepSeek USD 价格档案，项目成本统一使用美元
-- 事件带有时区时间戳时按事件时间计算；缺少时间戳时使用切点前固定价，避免把新价误计入历史
-- 只有明确识别为官方 DeepSeek API（裸模型名、`provider=deepseek` 或 `api.deepseek.com`）才启用潮汐价格
-- OpenRouter 的 `deepseek/deepseek-v4-*` canonical ID 继续使用 `pricing.json` 的静态价格
+- 价格单位：美元 / 1M token；使用 `_DEEPSEEK_LEGACY_PRICES` 和 `_DEEPSEEK_CURRENT_PRICES` 内置表
+- Harness 事件必须具有有效的毫秒时间戳；缺失或无效的事件不计入扫描结果
+- 其他 provider（包括 OpenRouter）沿用静态价格表；不会仅根据裸模型名推断为官方路由
+- 其他工具保留各自的计价路径，不承诺统一使用 Harness 的潮汐价格
 
-成本在请求/消息事件级别计算后再按日、模型和工具汇总；重算阶段不会用一个静态单价覆盖已经按历史时段计算的 DeepSeek 成本。缓存版本在价格逻辑变化时递增，以强制旧扫描结果重新采集。
+Harness 成本在请求级别计算后汇总；重算阶段保留已有的非零请求成本。仅在聚合成本缺失或为零时，使用当前时刻价格估算回退值；展示单价也可能随当前时段变化，并非历史成本的反推单价。扫描缓存及 Harness 成本版本控制历史结果的重新采集。
 
 ### 模型名归一化
 
