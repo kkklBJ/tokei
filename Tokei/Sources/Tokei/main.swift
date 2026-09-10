@@ -143,7 +143,7 @@ final class Store: ObservableObject {
         }
         let codexModels = codexRange.models.reduce(into: [String: Int]()) { totals, model in
             totals[model.name, default: 0] +=
-                model.in + model.out + model.cr + model.cw + model.reason
+                model.in + model.out + model.cr + model.cw
         }
         quotaHistory.record(QuotaCapture(
             claudeFiveHourRemaining: usage.claude.q5_stale == true

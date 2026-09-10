@@ -110,7 +110,7 @@ class DeepSeekHarnessTests(unittest.TestCase):
             }
             cache = {"v": USAGE._SCAN_CACHE_VERSION}
             with mock.patch.object(USAGE, "DEEPSEEK_HARNESS_DIR", tmp), \
-                 mock.patch.object(USAGE, "ledger_reconcile", side_effect=lambda _tool, days: days):
+                 mock.patch.object(USAGE, "ledger_reconcile", side_effect=lambda _tool, days, sources=None: days):
                 result = USAGE.scan_deepseek_harness(bounds, cache)
                 with mock.patch.object(
                     USAGE, "_deepseek_harness_usage_record",

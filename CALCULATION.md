@@ -58,6 +58,11 @@ Tokei 主要读取本地 AI 工具日志，统计 token 用量与成本。额度
 - 推理 = `reasoning_output_tokens`（`output_tokens` 的子集）
 - 总量 = `input_tokens + output_tokens`（即 `total_tokens`）
 
+新版日志读取 `token_usage_record.payload.usage`，按 `response_id` 去重；旧版
+`event_msg/token_count` 仍兼容。双写时抵扣对应的旧快照，跨增量扫描保存待抵扣状态。
+压缩上下文调用也计入；压缩后的上下文大小不当作一次调用用量。主卡片、Dashboard、
+回顾及额度历史的 token 总量都不重复加缓存或推理字段。
+
 Codex 的子代理和分叉 rollout 可能重放父任务历史。Tokei 使用 `session_meta.id`
 识别当前会话,再从 `forked_from_id` 或
 `source.subagent.thread_spawn.parent_thread_id` 找到父会话,并用
@@ -138,7 +143,22 @@ protocol 1.5 为每个 Agent 单独保存 `agents/<agent>/wire.jsonl`。Tokei �
 
 Tokei 优先读取逐请求日志以获得进行中会话和小时分布。旧版 `usage_record.jsonl`
 按 `sessionId` 取最后一份快照,用于补齐逐请求日志出现前的历史。同一会话同时存在两种来源时,
-逐请求日志优先,避免重复累计。
+保留逐请求记录，并按模型补入汇总中尚未覆盖的余额，避免部分逐请求日志遮蔽完整历史。
+余额归于汇总日期，不伪造缺失请求的小时；缓存明细不完整时仍保持输入总量不重复。
+
+### 持久账本与日志清理
+
+Codex、Claude、OpenClaw、Pi、Prime Agent、WorkBuddy、DeepSeek Harness、Qwen Code、
+Kimi Code 按可识别来源保存日快照。同日旧会话日志消失后，保留旧来源，再累计新来源；
+同一来源的重复扫描不重复加总。Codex 无现存日志时仍从账本提供历史，Dashboard 和回顾
+同时使用保留的模型及小时明细。来源标识以散列保存，并发保存合并来源，解析口径升级
+可替换对应来源的旧快照。
+
+旧版仅有日汇总的账本保留无法归属的余额，不把旧日总量与当前日志直接相加。
+旧模型明细与余额不一致时归入 `unknown`；旧小时明细超过余额时不继续使用该小时分布，
+保留有可靠时间戳的新记录。因此旧历史的小时合计可能小于总量，而不会伪造归属。
+升级前已删除且未留存的调用无法重建；同一来源内部被截断、以及仅有数据库日汇总的
+扫描器，仍无法凭日总量推断所有缺失事件。账本保护不是供应商逐请求账单的完整核销。
 
 **Grok Build** — `unified.jsonl` 中每条带 token 字段的 `shell.turn.inference_done` 代表一次模型调用：
 - 输入 = `prompt_tokens - cached_prompt_tokens`
