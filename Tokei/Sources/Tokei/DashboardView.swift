@@ -442,6 +442,8 @@ struct DashboardView: View {
         case "grok_bot": return Theme.grokBot
         case "grok": return Theme.grok
         case "qoder": return Theme.qoder
+        case "qoderwork": return Theme.qoderwork
+        case "qodercli": return Theme.qodercli
         case "hermes": return Theme.hermes
         case "zcode": return Theme.zcode
         case "mimocode": return Theme.mimocode
@@ -1230,6 +1232,16 @@ struct DashboardView: View {
                                  input: qoder.in + qoder.cached, out: qoder.out, tokens: qoderTokens))
         }
 
+        let qodercli = usage.qodercli.ranges.get(key)
+        if !qodercli.models.isEmpty {
+            appendTokenModels(qodercli.models, tool: "qodercli", suffix: "Qoder CLI", to: &out)
+        } else if qodercli.totalTokens > 0 {
+            out.append(modelCost(name: usage.qodercli.model ?? "Qoder CLI", cost: 0,
+                                 tool: "qodercli", input: qodercli.in, out: qodercli.out,
+                                 cr: qodercli.cr, cw: qodercli.cw,
+                                 tokens: qodercli.totalTokens))
+        }
+
         appendTokenModels(usage.hermes.ranges.get(key).models, tool: "hermes", suffix: "Hermes", to: &out)
         appendTokenModels(usage.zcode.ranges.get(key).models, tool: "zcode", suffix: "ZCode", to: &out)
         appendTokenModels(usage.mimocode.ranges.get(key).models, tool: "mimocode", suffix: "MiMoCode", to: &out)
@@ -1285,12 +1297,14 @@ struct DashboardView: View {
         let grok = usage.grok.ranges.get(key)
         let qoderwork = usage.qoderwork.ranges.get(key)
         let qoder = usage.qoder.ranges.get(key)
+        let qodercli = usage.qodercli.ranges.get(key)
         return claude.in + claude.out + claude.cr + claude.cw
             + codex.in + codex.cached + codex.out
             + gemini.in + gemini.cached + gemini.out + gemini.thoughts
             + (grok.usage_available ? grok.tokens : 0)
             + qoderwork.in + qoderwork.out
             + qoder.in + qoder.cached + qoder.out
+            + qodercli.totalTokens
             + hermesTotal(usage.hermes.ranges.get(key))
             + tokenUsageTotal(usage.zcode.ranges.get(key))
             + tokenUsageTotal(usage.mimocode.ranges.get(key))

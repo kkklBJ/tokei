@@ -169,6 +169,37 @@ class DashboardCacheTests(unittest.TestCase):
         self.assertEqual(wrapped["total_cost"], 7.25)
         self.assertEqual(sum(wrapped["hours"]), 255)
 
+    def test_qodercli_exact_usage_is_included_once_in_dashboard_and_wrapped(self):
+        today = date.today().isoformat()
+        first = {
+            "id": "request-1", "day": today, "model": "ultimate",
+            "in": 60, "out": 20, "cr": 30, "cw": 10,
+            "credits": 1.5, "usage_available": True, "est": 999,
+        }
+        second = {
+            "id": "request-2", "day": today, "model": "cmodel",
+            "in": 30, "out": 8, "cr": 20, "cw": 0,
+            "credits": 0.4, "usage_available": True, "est": 999,
+        }
+        cache = {
+            "v": USAGE._SCAN_CACHE_VERSION,
+            "_dirty": False,
+            "qodercli": {
+                "/tmp/main.jsonl": {"responses": [first, second], "days": {}},
+                "/tmp/child.jsonl": {"responses": [first], "days": {}, "sub": True},
+            },
+        }
+
+        daily = USAGE.build_daily_costs("1d", refresh=False, _cache=cache)
+        wrapped = USAGE.build_wrapped("1d", refresh=False, _cache=cache)
+
+        self.assertEqual(daily["daily"][0]["tokens"], 178)
+        cli_models = [model for model in daily["models"] if model["tool"] == "qodercli"]
+        self.assertEqual(sum(model["tokens"] for model in cli_models), 178)
+        self.assertEqual(daily["daily"][0]["total"], 0)
+        self.assertEqual(wrapped["total_tokens"], 178)
+        self.assertEqual(wrapped["total_cost"], 0)
+
     def test_account_provider_models_are_reported_without_double_counting_local_totals(self):
         today = date.today().isoformat()
         cache = {
