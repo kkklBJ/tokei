@@ -1408,11 +1408,18 @@ def _merge_live_token_day(agg, day):
 
 
 def _format_token_models(models, include_prices=True):
+    # Raw log aliases can resolve to the same SwiftUI row ID. Merge before
+    # sorting, preserving accumulated costs rather than repricing usage.
+    canonical_models = {}
+    for model, usage in models.items():
+        model_id = _model_identity_id(model)
+        merged = canonical_models.setdefault(model_id, {})
+        for field in ("in", "out", "cr", "cw", "reason", "cost", "cost_cny"):
+            merged[field] = merged.get(field, 0) + usage.get(field, 0)
     result = []
     sort_key = (lambda kv: -kv[1].get("cost", 0)) if include_prices else (
         lambda kv: -token_total(kv[1]))
-    for n, v in sorted(models.items(), key=sort_key):
-        model_id = _model_identity_id(n)
+    for model_id, v in sorted(canonical_models.items(), key=sort_key):
         price_id = _exact_pricing_id(model_id) if include_prices else None
         p = _raw_price(price_id) if price_id else {
             "in": 0.0, "out": 0.0, "cache_read": 0.0, "cache_write": 0.0}
