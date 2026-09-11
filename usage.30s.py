@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# TOKEI_COLLECTOR_REVISION=2
+# TOKEI_COLLECTOR_REVISION=3
 # <bitbar.title>AI Usage Bar</bitbar.title>
 # <bitbar.version>v0.1</bitbar.version>
 # <bitbar.author>local</bitbar.author>
@@ -251,6 +251,13 @@ _DEEPSEEK_CURRENT_PRICES = {
         "peak": {"in": 0.44, "out": 1.32, "cache_read": 0.014, "cache_write": 0.0},
     },
 }
+# Official USD schedule: https://api-docs.deepseek.com/quick_start/pricing/
+# September 10 announcement: effective at 04:00 UTC; Pro remains unchanged.
+_DEEPSEEK_FLASH_20260910_PRICES = {
+    "off_peak": {"in": 0.15, "out": 0.6, "cache_read": 0.003, "cache_write": 0.0},
+    "peak": {"in": 0.3, "out": 1.2, "cache_read": 0.006, "cache_write": 0.0},
+}
+_DEEPSEEK_FLASH_20260910_START = datetime(2026, 9, 10, 4, tzinfo=timezone.utc)
 _DEEPSEEK_NEW_PRICING_START = datetime(2026, 8, 16, 16, tzinfo=timezone.utc)
 
 
@@ -259,7 +266,7 @@ def _deepseek_official_model_id(model):
     if model_id in ("deepseek-v4-pro", "deepseek-v4-pro-0813"):
         return "deepseek-v4-pro"
     if model_id in ("deepseek-v4-flash", "deepseek-v4-flash-0731",
-                    "deepseek-v4-flash-vision-exp"):
+                    "deepseek-v4-flash-vision-exp", "deepseek-flash", "deepseek-v4.1-flash"):
         return "deepseek-v4-flash"
     return None
 
@@ -284,7 +291,10 @@ def _deepseek_official_price(model, at=None):
         price = _DEEPSEEK_LEGACY_PRICES.get(model_id)
         return dict(price) if price else None
     peak = when.weekday() < 5 and (1 <= when.hour < 4 or 6 <= when.hour < 10)
-    price = _DEEPSEEK_CURRENT_PRICES.get(model_id, {}).get("peak" if peak else "off_peak")
+    schedule = _DEEPSEEK_CURRENT_PRICES.get(model_id, {})
+    if model_id == "deepseek-v4-flash" and when >= _DEEPSEEK_FLASH_20260910_START:
+        schedule = _DEEPSEEK_FLASH_20260910_PRICES
+    price = schedule.get("peak" if peak else "off_peak")
     return dict(price) if price else None
 
 
@@ -352,6 +362,8 @@ def _make_pricing_fingerprint():
         "aliases": _OV_ALIASES,
         "deepseek_legacy": _DEEPSEEK_LEGACY_PRICES,
         "deepseek_current": _DEEPSEEK_CURRENT_PRICES,
+        "deepseek_flash_20260910": _DEEPSEEK_FLASH_20260910_PRICES,
+        "deepseek_flash_20260910_start": _DEEPSEEK_FLASH_20260910_START.isoformat(),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
@@ -8570,7 +8582,7 @@ def scan_grok_bot(bounds, cache):
 # ---------- DeepSeek Harness ----------
 # Harness 会为同一次调用写 usage chunk 和最终 message。按 session/turn/step
 # 只保留最终 message；异常中断时再用 usage chunk 兜底。
-_DEEPSEEK_HARNESS_COST_VERSION = 3
+_DEEPSEEK_HARNESS_COST_VERSION = 4
 
 
 def _deepseek_harness_usage_record(item, fallback_model="", fallback_provider="deepseek-official"):

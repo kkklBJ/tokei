@@ -103,6 +103,35 @@ class DeepSeekTimePricingTests(unittest.TestCase):
         price = USAGE._deepseek_official_price("deepseek-v4-flash", self.at_utc(22, 1))
         self.assertEqual(price["in"], 0.22)
 
+    def test_september_cutover_preserves_history_and_updates_all_flash_names(self):
+        before = datetime(2026, 9, 10, 3, 59, 59, tzinfo=timezone.utc)
+        cutover = datetime(2026, 9, 10, 4, tzinfo=timezone.utc)
+        self.assertEqual(USAGE._deepseek_official_price("deepseek-v4-flash", before)["in"], 0.44)
+        for name in ("deepseek-flash", "deepseek-v4.1-flash", "deepseek-v4-flash",
+                     "deepseek-v4-flash-vision-exp", "deepseek-v4-flash-0731",
+                     "deepseek/deepseek-v4.1-flash"):
+            with self.subTest(model=name):
+                price = USAGE._deepseek_official_price(name, cutover)
+                self.assertEqual(price, {"in": 0.15, "out": 0.6,
+                                         "cache_read": 0.003, "cache_write": 0.0})
+
+    def test_new_flash_peak_weekend_and_request_cost(self):
+        for day, hour, expected in ((11, 1, 1.506), (11, 4, 0.753),
+                                     (11, 6, 1.506), (11, 10, 0.753), (12, 1, 0.753)):
+            with self.subTest(day=day, hour=hour):
+                at = datetime(2026, 9, day, hour, tzinfo=timezone.utc)
+                event = harness_event("assistant/message", int(at.timestamp() * 1000), 1, 1,
+                                      {"inputTokens": 1_000_000, "outputTokens": 1_000_000,
+                                       "cacheReadTokens": 1_000_000}, model="deepseek-flash")
+                self.assertAlmostEqual(USAGE._deepseek_harness_usage_record(event)["cost"], expected)
+
+    def test_pro_remains_on_its_existing_prices_after_september_fourteenth(self):
+        price = USAGE._deepseek_official_price(
+            "deepseek-v4-pro", datetime(2026, 9, 14, 6, tzinfo=timezone.utc))
+        self.assertEqual(price["in"], 1.32)
+        self.assertEqual(price["out"], 3.96)
+        self.assertEqual(price["cache_read"], 0.044)
+
     def test_recalculation_does_not_replace_mixed_time_cost(self):
         model = {
             "name": "deepseek/deepseek-v4-flash",

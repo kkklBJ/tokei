@@ -225,7 +225,10 @@ DeepSeek Harness 中 `provider=deepseek-official` 的 `deepseek-v4-flash` / `dee
 - 高峰：工作日北京时间 09:00–12:00、14:00–18:00；周末及其余时间使用非高峰价
 - 涨价切点：2026-08-17 00:00（北京时间），切点时刻起使用新价格
 - 切点前旧价：Flash `$0.0028 / $0.14 / $0.28`，Pro `$0.003625 / $0.435 / $0.87`（缓存命中输入 / 缓存未命中输入 / 输出，均为每 1M token）
-- 价格单位：美元 / 1M token；使用 `_DEEPSEEK_LEGACY_PRICES` 和 `_DEEPSEEK_CURRENT_PRICES` 内置表
+- 2026-09-10 12:00（北京时间）起：Flash 非高峰 `$0.003 / $0.15 / $0.60`，高峰 `$0.006 / $0.30 / $1.20`（缓存命中 / 未命中 / 输出，每 1M token）；此前记录保留原价格
+- 兼容 `deepseek-flash`、`deepseek-v4.1-flash` 和原 Flash 名称；Pro 继续使用原有价格，不在 9 月 14 日切换为 Flash
+- 价格单位：美元 / 1M token，直接采用[官方美元价格](https://api-docs.deepseek.com/quick_start/pricing/)，不将人民币单价混入美元总额；新切点依据[9 月 10 日公告](https://www.deepseek.com/en/news/deepseek-v4-1-flash/)
+- 历史表保留在 `_DEEPSEEK_LEGACY_PRICES` / `_DEEPSEEK_CURRENT_PRICES`，新 Flash 表为 `_DEEPSEEK_FLASH_20260910_PRICES`
 - Harness 事件必须具有有效的毫秒时间戳；缺失或无效的事件不计入扫描结果
 - 其他 provider（包括 OpenRouter）沿用静态价格表；不会仅根据裸模型名推断为官方路由
 - 其他工具保留各自的计价路径，不承诺统一使用 Harness 的潮汐价格
