@@ -109,8 +109,7 @@ token 快照误删。
 - 缓存读、缓存写、推理作为输入/输出的组成明细展示
 - 总量 = 输入 + 输出
 - `deepseek-official` 路由固定采用 DeepSeek 官方直连价，不受 OpenRouter 价格更新影响
-- V4 Pro 缓存未命中输入、缓存命中输入、输出：`$0.435 / $0.003625 / $0.87` 每百万 Token
-- V4 Flash 缓存未命中输入、缓存命中输入、输出：`$0.14 / $0.0028 / $0.28` 每百万 Token
+- 官方直连使用人民币原价，按下文历史切点和峰谷时段计费；第三方保留渠道价格
 
 **Kimi Code** — 官方 wire 日志字段独立:
 - protocol 1.5 输入 = `usage.inputOther`
@@ -218,22 +217,25 @@ hit% = cached / input × 100
 - `pricing_overrides.json` — 本地修正(write1h 价格、别名、缺漏),更新不覆盖
 - `_DEFAULT_PRICES` — 内置硬编码,离线兜底
 
-### DeepSeek V4 官方 API 潮汐价格
+### DeepSeek 官方 API 人民币潮汐价格
 
-DeepSeek Harness 中 `provider=deepseek-official` 的 `deepseek-v4-flash` / `deepseek-v4-pro` 使用每次请求的时间选择价格：
+DeepSeek Harness 的 `provider=deepseek-official`，以及 OpenCode 明确记录的 `providerID=deepseek` / `deepseek-official`，按请求时间使用官方人民币价格。未知渠道不凭模型名推断为官方；OpenRouter 等第三方继续使用其渠道价格。
 
-- 高峰：工作日北京时间 09:00–12:00、14:00–18:00；周末及其余时间使用非高峰价
-- 涨价切点：2026-08-17 00:00（北京时间），切点时刻起使用新价格
-- 切点前旧价：Flash `$0.0028 / $0.14 / $0.28`，Pro `$0.003625 / $0.435 / $0.87`（缓存命中输入 / 缓存未命中输入 / 输出，均为每 1M token）
-- 2026-09-10 12:00（北京时间）起：Flash 非高峰 `$0.003 / $0.15 / $0.60`，高峰 `$0.006 / $0.30 / $1.20`（缓存命中 / 未命中 / 输出，每 1M token）；此前记录保留原价格
-- 兼容 `deepseek-flash`、`deepseek-v4.1-flash` 和原 Flash 名称；Pro 继续使用原有价格，不在 9 月 14 日切换为 Flash
-- 价格单位：美元 / 1M token，直接采用[官方美元价格](https://api-docs.deepseek.com/quick_start/pricing/)，不将人民币单价混入美元总额；新切点依据[9 月 10 日公告](https://www.deepseek.com/en/news/deepseek-v4-1-flash/)
-- 历史表保留在 `_DEEPSEEK_LEGACY_PRICES` / `_DEEPSEEK_CURRENT_PRICES`，新 Flash 表为 `_DEEPSEEK_FLASH_20260910_PRICES`
-- Harness 事件必须具有有效的毫秒时间戳；缺失或无效的事件不计入扫描结果
-- 其他 provider（包括 OpenRouter）沿用静态价格表；不会仅根据裸模型名推断为官方路由
-- 其他工具保留各自的计价路径，不承诺统一使用 Harness 的潮汐价格
+下表单位均为 **人民币 / 百万 token**，每格按缓存命中输入 / 缓存未命中输入 / 输出排列：
 
-Harness 成本在请求级别计算后汇总；重算阶段保留已有的非零请求成本。仅在聚合成本缺失或为零时，使用当前时刻价格估算回退值；展示单价也可能随当前时段变化，并非历史成本的反推单价。扫描缓存及 Harness 成本版本控制历史结果的重新采集。
+| 生效时间（北京时间） | Flash 非高峰 | Flash 高峰 | Pro 非高峰 | Pro 高峰 |
+|---|---|---|---|---|
+| 2026-08-17 00:00 之前 | 0.02 / 1 / 2 | 同左 | 0.025 / 3 / 6 | 同左 |
+| 2026-08-17 00:00 起 | 0.05 / 1.5 / 4.5 | 0.10 / 3 / 9 | 0.15 / 4.5 / 13.5 | 0.30 / 9 / 27 |
+| 2026-09-10 12:00 起 | 0.02 / 1 / 4 | 0.04 / 2 / 8 | 不变 | 不变 |
+
+- 高峰为北京时间周一至周五 09:00–12:00、14:00–18:00，其余时段为非高峰。
+- Flash 兼容 `deepseek-flash`、`deepseek-v4.1-flash`、旧 V4 Flash 和 vision-exp 名称；Pro 不在 9 月 14 日切换为 Flash。
+- 价格来自[官方人民币表](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)，新切点依据[9 月 10 日公告](https://www.deepseek.com/en/news/deepseek-v4-1-flash/)。历史表独立保留，不用新价反算旧调用。
+- `cost` 始终表示美元，`cost_cny` 表示人民币。官方人民币费用不再重复计入美元字段；汇总、明细、分享图和同步按币种分别累计，没有汇率换算。
+- Harness 与 OpenCode 的计费缓存版本升级，仍有原始日志的记录重新核算。仅剩旧账本且无法确认渠道和请求时间的历史费用保留原美元记录，不猜测兑换或重新定价。
+- 聚合行可能包含同模型的官方与第三方调用，保留两币种金额，不以聚合 token 重算。此类行不展示可能误导的渠道单价。
+- 其他工具仍保留各自日志/渠道计价路径；缺乏官方渠道身份的记录不会强制改为人民币。
 
 ### 模型名归一化
 

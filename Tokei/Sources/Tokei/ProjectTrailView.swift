@@ -8,6 +8,7 @@ struct TrailProject: Codable, Identifiable {
     var last_active: String
     var sessions: Int
     var tokens: Int
+    var cost_cny: Double? = nil
     var cost: Double
     var top_model: String
     var tools: [String]
@@ -167,7 +168,7 @@ struct ProjectTrailView: View {
                     Text("\(p.sessions) sessions")
                         .font(.system(size: Theme.fontSize(9))).foregroundStyle(Theme.tTertiary)
                     Text("·").foregroundStyle(Theme.tTertiary).font(.system(size: Theme.fontSize(9)))
-                    Text("$\(Int(p.cost))")
+                    Text(nativeMoney(p.cost, p.cost_cny))
                         .font(.system(size: Theme.fontSize(9), weight: .medium)).foregroundStyle(Theme.tSecondary)
                     if !p.top_model.isEmpty {
                         Text(p.top_model)

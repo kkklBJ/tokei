@@ -8,6 +8,7 @@ struct WrappedAchievement: Codable, Identifiable {
 
 struct WrappedProject: Codable, Identifiable {
     var name: String; var tokens: Int; var cost: Double
+    var cost_cny: Double? = nil
     var id: String { name }
 }
 
@@ -17,6 +18,7 @@ struct WrappedPeakDay: Codable { var date: String; var tokens: Int; var projects
 
 struct WrappedData: Codable {
     var total_tokens = 0
+    var cost_cny: Double? = nil
     var total_cost: Double = 0
     var active_days = 0
     var streak_max = 0
@@ -148,9 +150,9 @@ struct WrappedView: View {
     func statChips(_ d: WrappedData) -> some View {
         let avg = d.active_days > 0 ? d.total_cost / Double(d.active_days) : 0
         return HStack(spacing: 7) {
-            chip("总成本", "$" + intStr(d.total_cost), Theme.claude)
+            chip("总成本", nativeMoney(d.total_cost, d.cost_cny), Theme.claude)
             chip("连续", "\(d.streak_cur) 天", Theme.hermes, icon: "flame.fill")
-            chip("日均", "$" + intStr(avg), Theme.gemini)
+            chip("日均", nativeMoney(avg, (d.cost_cny ?? 0) / Double(max(d.active_days, 1))), Theme.gemini)
             chip("峰值日", shortDate(d.busiest.date), Color.red.opacity(0.85))
             chip("本命模型", d.top_model.name, Theme.codex)
         }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# TOKEI_COLLECTOR_REVISION=3
+# TOKEI_COLLECTOR_REVISION=4
 # <bitbar.title>AI Usage Bar</bitbar.title>
 # <bitbar.version>v0.1</bitbar.version>
 # <bitbar.author>local</bitbar.author>
@@ -232,30 +232,30 @@ _DEFAULT_PRICES = {
 }
 
 # DeepSeek Harness 的 deepseek-official 路由按官方直连价和调用时间计算。
-# 2026-08-16 16:00 UTC 起工作日分峰谷时段；单位为 USD / 1M tokens。
+# 2026-08-16 16:00 UTC 起工作日分峰谷时段；单位为 CNY / 1M tokens。
 _DEEPSEEK_LEGACY_PRICES = {
     "deepseek-v4-pro": {
-        "in": 0.435, "out": 0.87, "cache_read": 0.003625, "cache_write": 0.0,
+        "in": 3.0, "out": 6.0, "cache_read": 0.025, "cache_write": 0.0,
     },
     "deepseek-v4-flash": {
-        "in": 0.14, "out": 0.28, "cache_read": 0.0028, "cache_write": 0.0,
+        "in": 1.0, "out": 2.0, "cache_read": 0.02, "cache_write": 0.0,
     },
 }
 _DEEPSEEK_CURRENT_PRICES = {
     "deepseek-v4-pro": {
-        "off_peak": {"in": 0.66, "out": 1.98, "cache_read": 0.022, "cache_write": 0.0},
-        "peak": {"in": 1.32, "out": 3.96, "cache_read": 0.044, "cache_write": 0.0},
+        "off_peak": {"in": 4.5, "out": 13.5, "cache_read": 0.15, "cache_write": 0.0},
+        "peak": {"in": 9.0, "out": 27.0, "cache_read": 0.30, "cache_write": 0.0},
     },
     "deepseek-v4-flash": {
-        "off_peak": {"in": 0.22, "out": 0.66, "cache_read": 0.007, "cache_write": 0.0},
-        "peak": {"in": 0.44, "out": 1.32, "cache_read": 0.014, "cache_write": 0.0},
+        "off_peak": {"in": 1.5, "out": 4.5, "cache_read": 0.05, "cache_write": 0.0},
+        "peak": {"in": 3.0, "out": 9.0, "cache_read": 0.10, "cache_write": 0.0},
     },
 }
-# Official USD schedule: https://api-docs.deepseek.com/quick_start/pricing/
+# Official CNY schedule: https://api-docs.deepseek.com/zh-cn/quick_start/pricing/
 # September 10 announcement: effective at 04:00 UTC; Pro remains unchanged.
 _DEEPSEEK_FLASH_20260910_PRICES = {
-    "off_peak": {"in": 0.15, "out": 0.6, "cache_read": 0.003, "cache_write": 0.0},
-    "peak": {"in": 0.3, "out": 1.2, "cache_read": 0.006, "cache_write": 0.0},
+    "off_peak": {"in": 1.0, "out": 4.0, "cache_read": 0.02, "cache_write": 0.0},
+    "peak": {"in": 2.0, "out": 8.0, "cache_read": 0.04, "cache_write": 0.0},
 }
 _DEEPSEEK_FLASH_20260910_START = datetime(2026, 9, 10, 4, tzinfo=timezone.utc)
 _DEEPSEEK_NEW_PRICING_START = datetime(2026, 8, 16, 16, tzinfo=timezone.utc)
@@ -1086,7 +1086,7 @@ def _ledger_file_sources(file_cache, identity_field=None, accounting_version=1):
 
 def _ledger_add_record_source(sources, identity, day_key, record, hour=None):
     days = sources.setdefault(str(identity), {})
-    contribution = {field: record.get(field, 0) for field in (*TOKEN_FIELDS, "cost")}
+    contribution = {field: record.get(field, 0) for field in (*TOKEN_FIELDS, "cost", "cost_cny")}
     if record.get("models"):
         contribution["models"] = record["models"]
     elif record.get("model"):
@@ -1365,39 +1365,41 @@ def _iter_cached_token_days(tool_cache):
             yield day["date"], day
 
 
-def _add_model_usage(models, model, inp=0, out=0, cr=0, cw=0, reason=0, cost=0.0):
+def _add_model_usage(models, model, inp=0, out=0, cr=0, cw=0, reason=0, cost=0.0, cost_cny=0.0):
     if not model:
         return
     mm = models.setdefault(model, {"in": 0, "out": 0, "cr": 0, "cw": 0, "reason": 0, "cost": 0.0})
     mm["in"] += int(inp or 0); mm["out"] += int(out or 0)
     mm["cr"] += int(cr or 0); mm["cw"] += int(cw or 0); mm["reason"] += int(reason or 0)
     mm["cost"] += float(cost or 0)
+    mm["cost_cny"] = mm.get("cost_cny", 0.0) + float(cost_cny or 0)
 
 
-def _add_token_usage(target, inp=0, out=0, cr=0, cw=0, reason=0, cost=0.0, model=None):
+def _add_token_usage(target, inp=0, out=0, cr=0, cw=0, reason=0, cost=0.0, model=None, cost_cny=0.0):
     target["in"] += int(inp or 0); target["out"] += int(out or 0)
     target["cr"] += int(cr or 0); target["cw"] += int(cw or 0); target["reason"] += int(reason or 0)
     target["cost"] += float(cost or 0)
-    _add_model_usage(target.get("models", {}), model, inp, out, cr, cw, reason, cost)
+    target["cost_cny"] = target.get("cost_cny", 0.0) + float(cost_cny or 0)
+    _add_model_usage(target.get("models", {}), model, inp, out, cr, cw, reason, cost, cost_cny)
 
 
 def _merge_token_day(bucket, day, session=None):
     if session is not None:
         bucket["sessions"].add(session)
     _add_token_usage(bucket, day.get("in", 0), day.get("out", 0), day.get("cr", 0),
-                     day.get("cw", 0), day.get("reason", 0), day.get("cost", 0))
+                     day.get("cw", 0), day.get("reason", 0), day.get("cost", 0), cost_cny=day.get("cost_cny", 0))
     for model, mv in day.get("models", {}).items():
         _add_model_usage(bucket["models"], model, mv.get("in", 0), mv.get("out", 0),
-                         mv.get("cr", 0), mv.get("cw", 0), mv.get("reason", 0), mv.get("cost", 0))
+                         mv.get("cr", 0), mv.get("cw", 0), mv.get("reason", 0), mv.get("cost", 0), mv.get("cost_cny", 0))
 
 
 def _merge_live_token_day(agg, day):
     """跨文件合并同日数据(token 字段/models/hours,均 JSON 兼容),用作 ledger 的 live_days。"""
     _add_token_usage(agg, day.get("in", 0), day.get("out", 0), day.get("cr", 0),
-                     day.get("cw", 0), day.get("reason", 0), day.get("cost", 0))
+                     day.get("cw", 0), day.get("reason", 0), day.get("cost", 0), cost_cny=day.get("cost_cny", 0))
     for model, mv in (day.get("models") or {}).items():
         _add_model_usage(agg["models"], model, mv.get("in", 0), mv.get("out", 0),
-                         mv.get("cr", 0), mv.get("cw", 0), mv.get("reason", 0), mv.get("cost", 0))
+                         mv.get("cr", 0), mv.get("cw", 0), mv.get("reason", 0), mv.get("cost", 0), mv.get("cost_cny", 0))
     hours = day.get("hours")
     if isinstance(hours, list):
         agg_hours = agg.setdefault("hours", [0] * 24)
@@ -1417,7 +1419,7 @@ def _format_token_models(models, include_prices=True):
         result.append({"model_id": model_id, "name": nice_model(model_id),
                        "in": v.get("in", 0), "out": v.get("out", 0),
                         "cr": v.get("cr", 0), "cw": v.get("cw", 0), "reason": v.get("reason", 0),
-                        "cost": v.get("cost", 0), "pin": p["in"], "pout": p["out"]})
+                        "cost": v.get("cost", 0), "cost_cny": v.get("cost_cny", 0), "pin": 0 if v.get("cost_cny") else p["in"], "pout": 0 if v.get("cost_cny") else p["out"]})
     return result
 
 
@@ -6815,7 +6817,7 @@ def scan_grok(bounds, cache=None):
         for range_key in classify_date(day_date, bounds):
             bucket = B[range_key]
             _add_token_usage(bucket, day.get("in", 0), day.get("out", 0),
-                             day.get("cr", 0), 0, day.get("reason", 0), day.get("cost", 0))
+                             day.get("cr", 0), 0, day.get("reason", 0), day.get("cost", 0), cost_cny=day.get("cost_cny", 0))
             for model, usage in (day.get("models") or {}).items():
                 _add_model_usage(bucket["models"], model, usage.get("in", 0),
                                  usage.get("out", 0), usage.get("cr", 0), 0,
@@ -7559,7 +7561,7 @@ def scan_hermes(bounds, cache):
             for mn, mv in (day.get("models") or {}).items():
                 _add_model_usage(agg["models"], mn, mv.get("in", 0), mv.get("out", 0),
                                  mv.get("cr", 0), mv.get("cw", 0),
-                                 mv.get("reason", 0), mv.get("cost", 0))
+                                 mv.get("reason", 0), mv.get("cost", 0), mv.get("cost_cny", 0))
             for hour, amount in enumerate((day.get("hours") or [])[:24]):
                 agg["hours"][hour] += amount
 
@@ -8582,7 +8584,7 @@ def scan_grok_bot(bounds, cache):
 # ---------- DeepSeek Harness ----------
 # Harness 会为同一次调用写 usage chunk 和最终 message。按 session/turn/step
 # 只保留最终 message；异常中断时再用 usage chunk 兜底。
-_DEEPSEEK_HARNESS_COST_VERSION = 4
+_DEEPSEEK_HARNESS_COST_VERSION = 5
 
 
 def _deepseek_harness_usage_record(item, fallback_model="", fallback_provider="deepseek-official"):
@@ -8636,6 +8638,7 @@ def _deepseek_harness_usage_record(item, fallback_model="", fallback_provider="d
     provider = str(provider or "")
     cost = 0.0
     price = (_deepseek_official_price(model, dt) if provider == "deepseek-official" else None)
+    official_cny = price is not None
     if price is None:
         price_id = _pricing_id(model)
         price = _raw_price(price_id) if price_id else None
@@ -8647,7 +8650,8 @@ def _deepseek_harness_usage_record(item, fallback_model="", fallback_provider="d
         "turn": turn, "step": step, "priority": priority, "model": model,
         "provider": provider,
         "in": inp, "out": out, "cr": cr, "cw": cw, "reason": reason,
-        "cost": cost,
+        "cost": 0.0 if official_cny else cost,
+        "cost_cny": cost if official_cny else 0.0,
     }
 
 
@@ -8750,7 +8754,7 @@ def scan_deepseek_harness(bounds, cache):
                                   record["date"], record, record.get("hour"))
         day = days.setdefault(record["date"], _empty_token_day())
         _add_token_usage(day, record["in"], record["out"], record["cr"], record["cw"],
-                         record["reason"], record["cost"], record["model"])
+                         record["reason"], record["cost"], record["model"], record.get("cost_cny", 0))
         day["hours"][record["hour"]] += token_total(record)
         session = str(entry.get("sid") or "unknown")
         sessions.setdefault(record["date"], set()).add(session)
@@ -8788,7 +8792,7 @@ def scan_deepseek_harness(bounds, cache):
 # SQLite: ~/.local/share/opencode/opencode.db；旧版 JSON 作为补充来源。
 # JSON 文件: ~/.local/share/opencode/storage/message/<session>/msg_*.json
 # 每条 assistant 消息有 tokens{input,output,reasoning,cache{read,write}} + cost + modelID。
-_OPENCODE_COST_CACHE_VERSION = 1
+_OPENCODE_COST_CACHE_VERSION = 2
 
 
 def _opencode_db_paths():
@@ -8836,6 +8840,15 @@ def _opencode_message_day(message, session_id="", created_ms=0, estimate_missing
                     + ((int(tokens.get("output", 0) or 0) + int(tokens.get("reasoning", 0) or 0)) / 1e6) * price["out"]
                     + (int(cache.get("read", 0) or 0) / 1e6) * price["cache_read"]
                     + (int(cache.get("write", 0) or 0) / 1e6) * price["cache_write"])
+    cost_cny = 0.0
+    official = (_deepseek_official_price(model, created)
+                if message.get("providerID") in ("deepseek", "deepseek-official") else None)
+    if official:
+        cost_cny = (int(tokens.get("input", 0) or 0) * official["in"]
+                    + (int(tokens.get("output", 0) or 0) + int(tokens.get("reasoning", 0) or 0)) * official["out"]
+                    + int(cache.get("read", 0) or 0) * official["cache_read"]
+                    + int(cache.get("write", 0) or 0) * official["cache_write"]) / 1e6
+        cost = 0.0
     day = {
         "date": created.strftime("%Y-%m-%d"),
         "in": int(tokens.get("input", 0) or 0),
@@ -8843,14 +8856,14 @@ def _opencode_message_day(message, session_id="", created_ms=0, estimate_missing
         "reason": int(tokens.get("reasoning", 0) or 0),
         "cr": int(cache.get("read", 0) or 0),
         "cw": int(cache.get("write", 0) or 0),
-        "cost": cost,
+        "cost": cost, "cost_cny": cost_cny,
         "session": message.get("sessionID") or session_id,
         "models": {},
         "hours": [0] * 24,
     }
     day["hours"][created.hour] = token_total(day)
     _add_model_usage(day["models"], model, day["in"], day["out"], day["cr"],
-                     day["cw"], day["reason"], day["cost"])
+                     day["cw"], day["reason"], day["cost"], cost_cny)
     return day
 
 
@@ -8878,10 +8891,10 @@ def _scan_opencode_database(path, estimate_missing_cost=False):
             day_key = day.pop("date")
             target = days.setdefault(day_key, _empty_token_day())
             _add_token_usage(target, day["in"], day["out"], day["cr"], day["cw"],
-                             day["reason"], day["cost"])
+                             day["reason"], day["cost"], cost_cny=day.get("cost_cny", 0))
             for model, usage in day["models"].items():
                 _add_model_usage(target["models"], model, usage["in"], usage["out"],
-                                 usage["cr"], usage["cw"], usage["reason"], usage["cost"])
+                                 usage["cr"], usage["cw"], usage["reason"], usage["cost"], usage.get("cost_cny", 0))
             for hour, amount in enumerate(day["hours"]):
                 target["hours"][hour] += amount
             if day.get("session"):
@@ -8998,6 +9011,7 @@ def scan_opencode(bounds, cache):
 
     for day_key, day in live_days.items():
         day["sessions"] = sorted(live_sessions.get(day_key, set()))
+        day["_cost_version"] = _OPENCODE_COST_CACHE_VERSION
 
     for day_key, day in ledger_reconcile("opencode", live_days).items():
         try:
@@ -9390,18 +9404,18 @@ def _qwen_entries(token_files, summary_file):
                     for model, values in request["models"].items():
                         target = entry["models"].get(model)
                         if target is not None:
-                            for field in (*TOKEN_FIELDS, "cost"):
+                            for field in (*TOKEN_FIELDS, "cost", "cost_cny"):
                                 target[field] = target.get(field, 0) - values.get(field, 0)
                 for values in entry["models"].values():
                     # Cache detail can be more complete in request logs than in
                     # the summary. Preserve that detail without inflating total input.
                     remaining_input = max(sum(values.get(k, 0) for k in ("in", "cr", "cw")), 0)
-                    for field in (*TOKEN_FIELDS, "cost"):
+                    for field in (*TOKEN_FIELDS, "cost", "cost_cny"):
                         values[field] = max(values.get(field, 0), 0)
                     values["cr"] = min(values["cr"], remaining_input)
                     values["cw"] = min(values["cw"], remaining_input - values["cr"])
                     values["in"] = remaining_input - values["cr"] - values["cw"]
-                for field in (*TOKEN_FIELDS, "cost"):
+                for field in (*TOKEN_FIELDS, "cost", "cost_cny"):
                     entry[field] = sum(v.get(field, 0) for v in entry["models"].values())
                 entry["hour"] = None  # The summary does not locate missing calls in time.
             if token_total(entry):
@@ -9800,6 +9814,7 @@ def scan_kimicode(bounds, cache):
 
     for day_key, day in live_days.items():
         day["sessions"] = sorted(live_sessions.get(day_key, set()))
+        day["_cost_version"] = _OPENCODE_COST_CACHE_VERSION
         day["projects"] = sorted(live_projects.get(day_key, set()))
 
     for day_key, day in ledger_reconcile("kimicode", live_days, _ledger_file_sources(fc, "sid")).items():
@@ -10259,7 +10274,7 @@ def compute():
         denom = b["cr"] + b["cw"] + b["in"]
         hit = (b["cr"] / denom * 100) if denom else 0.0
         return {"hit": hit, "in": b["in"], "out": b["out"], "cr": b["cr"], "cw": b["cw"],
-                "reason": b["reason"], "cost": b["cost"], "sessions": len(b["sessions"]),
+                "reason": b["reason"], "cost": b["cost"], "cost_cny": b.get("cost_cny", 0), "sessions": len(b["sessions"]),
                 "models": _format_token_models(b["models"])}
 
     piranges = {k: token_usage_range(pi["ranges"][k]) for k in RANGE_KEYS}
@@ -10440,6 +10455,11 @@ def _recalc_costs(result):
                 if not price_id:
                     price_id = _pricing_id(name)
                 authoritative_cost = float(m.get("cost", 0) or 0)
+                if tool_key == "deepseek_harness":
+                    total_cost += authoritative_cost
+                    m["pin"] = 0
+                    m["pout"] = 0
+                    continue
                 if tool_key == "hermes" and authoritative_cost:
                     total_cost += authoritative_cost
                     if price_id:
@@ -10756,7 +10776,7 @@ def main():
         print(f"今日 缓存读 {human(dt['cr']):>6} {F}")
         if dt.get("reason"):
             print(f"今日 推理   {human(dt['reason']):>6} {F}")
-        print(f"今日 ≈成本  ${dt['cost']:.2f} {F}")
+        print(f"今日 ≈成本  ${dt['cost']:.2f} + ¥{dt.get('cost_cny', 0):.2f} {F}")
         print("---")
     # Qwen Code 块
     qt = d["qwencode"]["ranges"]["today"]
@@ -11065,6 +11085,35 @@ def _gemini_token_total(day):
     cached = min(int(day.get("cached", 0) or 0), input_total)
     return max(input_total - cached, 0) + cached + int(day.get("out", 0) or 0) \
         + int(day.get("thoughts", 0) or 0)
+
+
+def _cny_breakdown(cache, cutoff=None):
+    """Native CNY only; combine retained ledger days with live cache without FX."""
+    by_tool = {"deepseek_harness": {}, "opencode": {}}
+    for _, _, record in _iter_deepseek_harness_records(cache.get("deepseek_harness", {})):
+        day = by_tool["deepseek_harness"].setdefault(record["date"], {})
+        model = record["model"]
+        day[model] = day.get(model, 0.0) + record.get("cost_cny", 0.0)
+    for dk, record in _iter_cached_token_days(cache.get("opencode", {})):
+        day = by_tool["opencode"].setdefault(dk, {})
+        for model, mv in record.get("models", {}).items():
+            day[model] = day.get(model, 0.0) + mv.get("cost_cny", 0.0)
+    for tool, days in by_tool.items():
+        for dk, record in _load_ledger().get("tools", {}).get(tool, {}).items():
+            if "cost_cny" in record:
+                days[dk] = {model: mv.get("cost_cny", 0.0)
+                            for model, mv in record.get("models", {}).items()}
+    daily, models, daily_tools = {}, {}, {}
+    for tool, days in by_tool.items():
+        for dk, amounts in days.items():
+            if cutoff and dk < cutoff:
+                continue
+            daily[dk] = daily.get(dk, 0.0) + sum(amounts.values())
+            daily_tools.setdefault(dk, {})[tool] = sum(amounts.values())
+            for model, amount in amounts.items():
+                key = (tool, nice_model(model))
+                models[key] = models.get(key, 0.0) + amount
+    return daily, models, daily_tools
 
 
 def build_daily_costs(period="all", refresh=True, _cache=None):
@@ -11510,6 +11559,13 @@ def build_daily_costs(period="all", refresh=True, _cache=None):
         (_ZAI_PROVIDER_DAYS_CACHE_KEY, "zai", "z.ai 账号"),
     ))
 
+    cny_days, cny_models, cny_tools = _cny_breakdown(cache, cutoff)
+    for day in daily:
+        day["cost_cny"] = cny_days.get(day["date"], 0.0)
+        day["cny_by_tool"] = cny_tools.get(day["date"], {})
+    for model in model_list:
+        base_name = model["name"].rsplit(" (", 1)[0]
+        model["cost_cny"] = cny_models.get((model["tool"], base_name), 0.0)
     return {"daily": daily, "models": model_list, "provider_models": provider_model_list}
 
 
@@ -11552,6 +11608,7 @@ def build_wrapped(period="all", refresh=True, _cache=None):
     day_tokens = {}
     day_cost = {}
     proj_tok = {}
+    proj_cny = {}
     day_projs = {}
     model_tok = {}
     all_day_hours = set()
@@ -11809,6 +11866,7 @@ def build_wrapped(period="all", refresh=True, _cache=None):
         project = os.path.basename(project_path.rstrip("/")) or "DeepSeek Harness"
         pt = proj_tok.setdefault(project, [0, 0.0])
         pt[0] += tok; pt[1] += record.get("cost", 0)
+        proj_cny[project] = proj_cny.get(project, 0.0) + record.get("cost_cny", 0)
         day_projs.setdefault(dk, set()).add(project)
         model_name = f"{nice_model(record.get('model', 'deepseek-v4-pro'))} (DeepSeek Harness)"
         model_tok[model_name] = model_tok.get(model_name, 0) + tok
@@ -11893,7 +11951,7 @@ def build_wrapped(period="all", refresh=True, _cache=None):
     top_model_name, top_model_tok = (max(model_tok.items(), key=lambda kv: kv[1])
                                      if model_tok else ("-", 0))
     projects = sorted(
-        ({"name": p, "tokens": v[0], "cost": round(v[1], 2)} for p, v in proj_tok.items()),
+        ({"name": p, "tokens": v[0], "cost": round(v[1], 2), "cost_cny": proj_cny.get(p, 0)} for p, v in proj_tok.items()),
         key=lambda x: -x["tokens"])[:8]
     max_projs_day = max((len(s) for s in day_projs.values()), default=0)
     hours_total = sum(hours)
@@ -11987,6 +12045,7 @@ def build_wrapped(period="all", refresh=True, _cache=None):
     return {
         "total_tokens": total_tokens,
         "total_cost": round(total_cost, 2),
+        "cost_cny": sum(_cny_breakdown(cache, cutoff)[0].values()),
         "active_days": len(active),
         "streak_max": streak_max,
         "streak_cur": streak_cur,
@@ -12578,6 +12637,7 @@ def projects():
         p["tools"].add("deepseek_harness")
         p["tokens"] += token_total(record)
         p["cost"] += record.get("cost", 0)
+        p["cost_cny"] = p.get("cost_cny", 0) + record.get("cost_cny", 0)
         dk = record.get("date", "")
         if dk > p["last_active"]:
             p["last_active"] = dk
@@ -12655,7 +12715,7 @@ def projects():
             "last_active": info["last_active"],
             "sessions": info["sessions"],
             "tokens": info["tokens"],
-            "cost": round(info["cost"], 2),
+            "cost": round(info["cost"], 2), "cost_cny": info.get("cost_cny", 0),
             "top_model": top_model,
             "tools": sorted(info["tools"]),
         }

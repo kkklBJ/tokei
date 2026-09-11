@@ -547,6 +547,7 @@ struct TokenModelStat: Codable, Identifiable {
     var cr: Int = 0
     var cw: Int = 0
     var reason: Int = 0
+    var cost_cny: Double? = nil
     var cost: Double
     var pin: Double = 0
     var pout: Double = 0
@@ -563,13 +564,14 @@ struct TokenModelStat: Codable, Identifiable {
         cw = try c.decodeIfPresent(Int.self, forKey: .cw) ?? 0
         reason = try c.decodeIfPresent(Int.self, forKey: .reason) ?? 0
         cost = try c.decodeIfPresent(Double.self, forKey: .cost) ?? 0
+        cost_cny = try c.decodeIfPresent(Double.self, forKey: .cost_cny)
         pin = try c.decodeIfPresent(Double.self, forKey: .pin) ?? 0
         pout = try c.decodeIfPresent(Double.self, forKey: .pout) ?? 0
     }
 
     private enum CodingKeys: String, CodingKey {
         case modelId = "model_id"
-        case name, tokens, `in`, out, cr, cw, reason, cost, pin, pout
+        case name, tokens, `in`, out, cr, cw, reason, cost, cost_cny, pin, pout
     }
 }
 struct HermesRanges: Codable {
@@ -652,6 +654,7 @@ struct TokenUsageRange: Codable {
     var cr: Int
     var cw: Int
     var reason: Int
+    var cost_cny: Double? = nil
     var cost: Double
     var requests: Int
     var sessions: Int = 0
@@ -694,6 +697,7 @@ struct TokenUsageRange: Codable {
         cw = try c.decodeIfPresent(Int.self, forKey: .cw) ?? 0
         reason = try c.decodeIfPresent(Int.self, forKey: .reason) ?? 0
         cost = try c.decodeIfPresent(Double.self, forKey: .cost) ?? 0
+        cost_cny = try c.decodeIfPresent(Double.self, forKey: .cost_cny)
         requests = try c.decodeIfPresent(Int.self, forKey: .requests) ?? 0
         sessions = try c.decodeIfPresent(Int.self, forKey: .sessions) ?? 0
         models = try c.decodeIfPresent([TokenModelStat].self, forKey: .models) ?? []
@@ -1040,4 +1044,12 @@ enum Fmt {
         if days <= 30 { return "\(days / 7)周前" }
         return "\(days / 30)月前"
     }
+}
+
+/// Cost fields retain native currencies; no exchange-rate conversion or mixed sum.
+func nativeMoney(_ usd: Double, _ cny: Double? = nil) -> String {
+    var parts: [String] = []
+    if usd > 0 || (cny ?? 0) <= 0 { parts.append(String(format: "$%.2f", usd)) }
+    if let cny, cny > 0 { parts.append(String(format: "¥%.2f", cny)) }
+    return parts.joined(separator: " + ")
 }

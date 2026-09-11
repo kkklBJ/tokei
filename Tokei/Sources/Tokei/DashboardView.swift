@@ -11,6 +11,8 @@ struct DailyCost: Codable, Identifiable {
     var workbuddy_ai: Double?
     var deepseek_harness: Double?
     var qwencode: Double?
+    var cny_by_tool: [String: Double]? = nil
+    var cost_cny: Double? = nil
     var total: Double
     var c_in: Int = 0
     var c_out: Int = 0
@@ -57,6 +59,7 @@ struct DailyCost: Codable, Identifiable {
 
 struct ModelCost: Codable, Identifiable {
     var name: String
+    var cost_cny: Double? = nil
     var cost: Double
     var tool: String
     var `in`: Int?
@@ -71,9 +74,10 @@ struct ModelCost: Codable, Identifiable {
 
     init(name: String, cost: Double, tool: String, input: Int? = nil, out: Int? = nil,
          cr: Int? = nil, cw: Int? = nil, reason: Int? = nil, tokens: Int? = nil,
-         cost_per_k: Double = 0, out_ratio: Double = 0) {
+         cost_per_k: Double = 0, out_ratio: Double = 0, cost_cny: Double? = nil) {
         self.name = name
         self.cost = cost
+        self.cost_cny = cost_cny
         self.tool = tool
         self.in = input
         self.out = out
@@ -406,7 +410,7 @@ struct DashboardView: View {
             ForEach(top) { m in
                 StatBar(name: m.name,
                         tokens: m.tokens ?? ((m.in ?? 0) + (m.out ?? 0)),
-                        cost: m.cost, maxTokens: maxTokens,
+                        cost_cny: m.cost_cny, cost: m.cost, maxTokens: maxTokens,
                         tint: modelTint(m.tool))
             }
         }
@@ -526,7 +530,7 @@ struct DashboardView: View {
                 Text(d.date).font(.system(size: Theme.fontSize(13), weight: .bold, design: .monospaced))
                     .foregroundStyle(Theme.tPrimary)
                 Spacer()
-                Text(String(format: "$%.2f", d.total))
+                Text(nativeMoney(d.total, d.cost_cny))
                     .font(.system(size: Theme.fontSize(15), weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                 Button { selectedCell = nil } label: {
@@ -555,7 +559,7 @@ struct DashboardView: View {
                 }
                 if deepseekTokens > 0 {
                     heatProviderMetric("DeepSeek Harness", tint: Theme.deepseekHarness,
-                                       tokens: deepseekTokens, cost: d.deepseek_harness ?? 0)
+                                       tokens: deepseekTokens, cost: d.deepseek_harness ?? 0, cny: d.cny_by_tool?["deepseek_harness"])
                 }
                 heatProviderMetric("Qwen Code", tint: Theme.qwencode,
                                    tokens: (d.q_in ?? 0) + (d.q_out ?? 0) + (d.q_cr ?? 0) + (d.q_reason ?? 0),
@@ -573,7 +577,7 @@ struct DashboardView: View {
                 .strokeBorder(Theme.claude.opacity(0.2), lineWidth: 0.5)))
     }
 
-    private func heatProviderMetric(_ name: String, tint: Color, tokens: Int, cost: Double) -> some View {
+    private func heatProviderMetric(_ name: String, tint: Color, tokens: Int, cost: Double, cny: Double? = nil) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 4) {
                 Circle().fill(tint).frame(width: 6, height: 6)
@@ -584,7 +588,7 @@ struct DashboardView: View {
             Text("\(Fmt.human(tokens)) tok")
                 .font(.system(size: Theme.fontSize(11), design: .monospaced))
                 .foregroundStyle(Theme.tTertiary)
-            Text(String(format: "$%.2f", cost))
+            Text(nativeMoney(cost, cny))
                 .font(.system(size: Theme.fontSize(12), weight: .semibold, design: .monospaced))
                 .foregroundStyle(Theme.tSecondary)
         }
@@ -635,8 +639,8 @@ struct DashboardView: View {
                                 .font(.system(size: Theme.fontSize(9), design: .monospaced))
                                 .foregroundStyle(Theme.tTertiary)
                                 .frame(width: 38, alignment: .leading)
-                            if cost > 0 {
-                                Text(String(format: "$%.0f", cost))
+                            if cost > 0 || (daily.first { $0.date == ds }?.cost_cny ?? 0) > 0 {
+                                Text(nativeMoney(cost, daily.first { $0.date == ds }?.cost_cny))
                                     .font(.system(size: Theme.fontSize(10), weight: .semibold, design: .monospaced))
                                     .foregroundStyle(Theme.tSecondary)
                             }
@@ -937,6 +941,7 @@ struct DashboardView: View {
         var data = fallback ?? WrappedData()
         data.total_tokens = totalTokens
         data.total_cost = totalCost
+        data.cost_cny = (usage.deepseekHarness.ranges.get(key).cost_cny ?? 0) + (usage.opencode.ranges.get(key).cost_cny ?? 0)
         data.top_model = WrappedModel(name: top?.name ?? "-", tokens: top?.tokens ?? 0)
         data.period = period.rawValue
         if data.first_day.isEmpty {
@@ -1017,6 +1022,8 @@ struct DashboardView: View {
                   workbuddy_ai: (lhs.workbuddy_ai ?? 0) + (rhs.workbuddy_ai ?? 0),
                   deepseek_harness: (lhs.deepseek_harness ?? 0) + (rhs.deepseek_harness ?? 0),
                   qwencode: (lhs.qwencode ?? 0) + (rhs.qwencode ?? 0),
+                  cny_by_tool: (lhs.cny_by_tool ?? [:]).merging(rhs.cny_by_tool ?? [:], uniquingKeysWith: +),
+                  cost_cny: (lhs.cost_cny ?? 0) + (rhs.cost_cny ?? 0),
                   total: lhs.total + rhs.total,
                   c_in: lhs.c_in + rhs.c_in,
                   c_out: lhs.c_out + rhs.c_out,
@@ -1076,6 +1083,7 @@ struct DashboardView: View {
             if var existing = byName[project.name] {
                 existing.tokens += project.tokens
                 existing.cost += project.cost
+                existing.cost_cny = (existing.cost_cny ?? 0) + (project.cost_cny ?? 0)
                 byName[project.name] = existing
             } else {
                 byName[project.name] = project
@@ -1208,13 +1216,13 @@ struct DashboardView: View {
             if tokens > 0 || model.cost > 0 {
                 out.append(modelCost(name: "\(model.name) (\(suffix))", cost: model.cost, tool: tool,
                                      input: model.in, out: model.out, cr: model.cr, cw: model.cw,
-                                     reason: model.reason, tokens: tokens))
+                                     reason: model.reason, tokens: tokens, cost_cny: model.cost_cny))
             }
         }
     }
 
     static func modelCost(name: String, cost: Double, tool: String, input: Int? = nil, out: Int? = nil,
-                          cr: Int? = nil, cw: Int? = nil, reason: Int? = nil, tokens: Int? = nil) -> ModelCost {
+                          cr: Int? = nil, cw: Int? = nil, reason: Int? = nil, tokens: Int? = nil, cost_cny: Double? = nil) -> ModelCost {
         let inputTokens = input ?? 0
         let outputTokens = out ?? 0
         let cacheReadTokens = cr ?? 0
@@ -1226,7 +1234,7 @@ struct DashboardView: View {
         let outRatio = total > 0 ? Double(outputTokens) / Double(total) * 100 : 0
         return ModelCost(name: name, cost: cost, tool: tool, input: input, out: out,
                          cr: cr, cw: cw, reason: reason, tokens: total,
-                         cost_per_k: costPerK, out_ratio: outRatio)
+                         cost_per_k: costPerK, out_ratio: outRatio, cost_cny: cost_cny)
     }
 
     static func usageTotalTokens(_ usage: Usage, _ key: RangeKey) -> Int {

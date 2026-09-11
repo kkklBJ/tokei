@@ -1649,7 +1649,7 @@ struct PanelView: View {
             cardHead(title, tint: tint, sessions: r.sessions, toolID: toolID)
             if r.sessions > 0 {
                 CostHeadline(value: Fmt.human(r.in + r.out + r.cr + r.cw + r.reason), caption: "\(sel.label) 总量", tint: tint)
-                metricGrid(showsCost ? [.init("dollarsign.circle", "≈成本", String(format: "$%.2f", r.cost))] : [],
+                metricGrid(showsCost ? [.init("dollarsign.circle", "≈成本", nativeMoney(r.cost, r.cost_cny))] : [],
                     hit: r.hit, extra: tokenUsageMetrics(r, inclusiveIO: inclusiveIO), tint: tint)
                 if !r.models.isEmpty {
                     tokenModelDisclosure(r.models, open: modelsOpen, tint: tint,
@@ -1951,8 +1951,8 @@ struct PanelView: View {
                                             .padding(.horizontal, 4).padding(.vertical, 1)
                                             .background(Capsule().fill(Color.primary.opacity(0.06)))
                                     }
-                                    if m.cost > 0 {
-                                        Text(String(format: "$%.2f", m.cost))
+                                    if m.cost > 0 || (m.cost_cny ?? 0) > 0 {
+                                        Text(nativeMoney(m.cost, m.cost_cny))
                                             .font(.system(size: Theme.fontSize(11.5), weight: .semibold, design: .monospaced))
                                             .foregroundStyle(Theme.tPrimary)
                                     }

@@ -33,11 +33,11 @@ class DeepSeekTimePricingTests(unittest.TestCase):
             "deepseek-v4-flash", at=self.at_utc(19, 10)
         )
 
-        self.assertEqual(off_peak_before_morning["in"], 0.22)
-        self.assertEqual(peak_morning["in"], 0.44)
-        self.assertEqual(off_peak_midday["in"], 0.22)
-        self.assertEqual(peak_afternoon["in"], 0.44)
-        self.assertEqual(off_peak_evening["in"], 0.22)
+        self.assertEqual(off_peak_before_morning["in"], 1.5)
+        self.assertEqual(peak_morning["in"], 3.0)
+        self.assertEqual(off_peak_midday["in"], 1.5)
+        self.assertEqual(peak_afternoon["in"], 3.0)
+        self.assertEqual(off_peak_evening["in"], 1.5)
 
     def test_pro_uses_the_same_schedule_with_its_own_prices(self):
         price = USAGE._deepseek_official_price(
@@ -45,9 +45,9 @@ class DeepSeekTimePricingTests(unittest.TestCase):
             at=self.at_utc(19, 1),
         )
 
-        self.assertEqual(price["in"], 1.32)
-        self.assertEqual(price["out"], 3.96)
-        self.assertEqual(price["cache_read"], 0.044)
+        self.assertEqual(price["in"], 9.0)
+        self.assertEqual(price["out"], 27.0)
+        self.assertEqual(price["cache_read"], 0.30)
 
     def test_price_change_is_effective_at_midnight_and_keeps_previous_history(self):
         before_cutover = USAGE._deepseek_official_price(
@@ -63,13 +63,13 @@ class DeepSeekTimePricingTests(unittest.TestCase):
             at=self.at_utc(17, 1),
         )
 
-        self.assertEqual(before_cutover["in"], 0.14)
-        self.assertEqual(before_cutover["out"], 0.28)
-        self.assertEqual(before_cutover["cache_read"], 0.0028)
-        self.assertEqual(at_cutover["in"], 0.22)
-        self.assertEqual(at_cutover["out"], 0.66)
-        self.assertEqual(at_cutover["cache_read"], 0.007)
-        self.assertEqual(peak_after_cutover["in"], 0.44)
+        self.assertEqual(before_cutover["in"], 1.0)
+        self.assertEqual(before_cutover["out"], 2.0)
+        self.assertEqual(before_cutover["cache_read"], 0.02)
+        self.assertEqual(at_cutover["in"], 1.5)
+        self.assertEqual(at_cutover["out"], 4.5)
+        self.assertEqual(at_cutover["cache_read"], 0.05)
+        self.assertEqual(peak_after_cutover["in"], 3.0)
 
     def test_nonofficial_route_uses_static_pricing(self):
         event = harness_event(
@@ -93,7 +93,8 @@ class DeepSeekTimePricingTests(unittest.TestCase):
             model="deepseek-v4-flash",
         )
         record = USAGE._deepseek_harness_usage_record(event)
-        self.assertAlmostEqual(record["cost"], 1.76)
+        self.assertEqual(record["cost"], 0)
+        self.assertAlmostEqual(record["cost_cny"], 12.0)
 
         # Untimed events are excluded; they must not silently use today's price.
         event.pop("time")
@@ -101,36 +102,36 @@ class DeepSeekTimePricingTests(unittest.TestCase):
 
     def test_weekend_stays_off_peak(self):
         price = USAGE._deepseek_official_price("deepseek-v4-flash", self.at_utc(22, 1))
-        self.assertEqual(price["in"], 0.22)
+        self.assertEqual(price["in"], 1.5)
 
     def test_september_cutover_preserves_history_and_updates_all_flash_names(self):
         before = datetime(2026, 9, 10, 3, 59, 59, tzinfo=timezone.utc)
         cutover = datetime(2026, 9, 10, 4, tzinfo=timezone.utc)
-        self.assertEqual(USAGE._deepseek_official_price("deepseek-v4-flash", before)["in"], 0.44)
+        self.assertEqual(USAGE._deepseek_official_price("deepseek-v4-flash", before)["in"], 3.0)
         for name in ("deepseek-flash", "deepseek-v4.1-flash", "deepseek-v4-flash",
                      "deepseek-v4-flash-vision-exp", "deepseek-v4-flash-0731",
                      "deepseek/deepseek-v4.1-flash"):
             with self.subTest(model=name):
                 price = USAGE._deepseek_official_price(name, cutover)
-                self.assertEqual(price, {"in": 0.15, "out": 0.6,
-                                         "cache_read": 0.003, "cache_write": 0.0})
+                self.assertEqual(price, {"in": 1.0, "out": 4.0,
+                                         "cache_read": 0.02, "cache_write": 0.0})
 
     def test_new_flash_peak_weekend_and_request_cost(self):
-        for day, hour, expected in ((11, 1, 1.506), (11, 4, 0.753),
-                                     (11, 6, 1.506), (11, 10, 0.753), (12, 1, 0.753)):
+        for day, hour, expected in ((11, 1, 10.04), (11, 4, 5.02),
+                                     (11, 6, 10.04), (11, 10, 5.02), (12, 1, 5.02)):
             with self.subTest(day=day, hour=hour):
                 at = datetime(2026, 9, day, hour, tzinfo=timezone.utc)
                 event = harness_event("assistant/message", int(at.timestamp() * 1000), 1, 1,
                                       {"inputTokens": 1_000_000, "outputTokens": 1_000_000,
                                        "cacheReadTokens": 1_000_000}, model="deepseek-flash")
-                self.assertAlmostEqual(USAGE._deepseek_harness_usage_record(event)["cost"], expected)
+                self.assertAlmostEqual(USAGE._deepseek_harness_usage_record(event)["cost_cny"], expected)
 
     def test_pro_remains_on_its_existing_prices_after_september_fourteenth(self):
         price = USAGE._deepseek_official_price(
             "deepseek-v4-pro", datetime(2026, 9, 14, 6, tzinfo=timezone.utc))
-        self.assertEqual(price["in"], 1.32)
-        self.assertEqual(price["out"], 3.96)
-        self.assertEqual(price["cache_read"], 0.044)
+        self.assertEqual(price["in"], 9.0)
+        self.assertEqual(price["out"], 27.0)
+        self.assertEqual(price["cache_read"], 0.30)
 
     def test_recalculation_does_not_replace_mixed_time_cost(self):
         model = {

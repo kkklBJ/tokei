@@ -206,6 +206,7 @@ struct MiniBar: View {
 struct StatBar: View {
     var name: String
     var tokens: Int
+    var cost_cny: Double? = nil
     var cost: Double
     var maxTokens: Double
     var tint: Color
@@ -217,7 +218,7 @@ struct StatBar: View {
                 Spacer(minLength: 8)
                 Text(Fmt.human(tokens)).font(.system(size: Theme.fontSize(9.5), design: .monospaced))
                     .foregroundStyle(Theme.tTertiary)
-                Text("$\(Int(cost))").font(.system(size: Theme.fontSize(10), weight: .semibold, design: .monospaced))
+                Text(nativeMoney(cost, cost_cny)).font(.system(size: Theme.fontSize(10), weight: .semibold, design: .monospaced))
                     .foregroundStyle(Theme.tSecondary)
             }
             GeometryReader { geo in

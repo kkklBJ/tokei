@@ -651,6 +651,7 @@ final class SyncManager {
             var d = dst.get(pair.dst), s = src.get(pair.src)
             d.in += s.in; d.out += s.out; d.cr += s.cr; d.cw += s.cw
             d.reason += s.reason; d.cost += s.cost; d.sessions += s.sessions
+            d.cost_cny = (d.cost_cny ?? 0) + (s.cost_cny ?? 0)
             d.hit = hitRate(cached: d.cr, input: d.in, cacheWrite: d.cw)
             mergeTokenModels(&d.models, s.models)
             dst.set(pair.dst, d)
@@ -724,6 +725,7 @@ final class SyncManager {
                 dst[idx].cw += m.cw
                 dst[idx].reason += m.reason
                 dst[idx].cost += m.cost
+                dst[idx].cost_cny = (dst[idx].cost_cny ?? 0) + (m.cost_cny ?? 0)
                 if dst[idx].name == "未知" && m.name != "未知" {
                     dst[idx].name = m.name
                 }

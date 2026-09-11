@@ -35,6 +35,21 @@ struct UsageSummaryBuilderCheck {
         try expect(todayText.contains("$0.10") || todayText.contains("$0.1"),
                    "gemini cost missing: \(todayText)")
 
+        var mixed = usage
+        mixed.deepseekHarness.ranges.today.cost = 0.31
+        mixed.deepseekHarness.ranges.today.cost_cny = 5.02
+        mixed.deepseekHarness.ranges.today.in = 100
+        let nativeText = UsageSummaryBuilder.text(usage: mixed, range: .today,
+                                                 visibility: allVisible)
+        try expect(nativeText.contains("¥5.02"), "native CNY missing: \(nativeText)")
+        try expect(nativeMoney(0.31, 5.02) == "$0.31 + ¥5.02", "currencies must stay separate")
+        let nativeTotals = UsageSummaryBuilder.totals(for: UsageSummaryBuilder.toolLines(
+            usage: mixed, range: .today, visibility: allVisible))
+        try expect(nativeTotals.cost_cny == 5.02, "CNY total mismatch")
+        let decoded = try JSONDecoder().decode(TokenUsageRange.self, from:
+            Data(#"{"cost":0.31,"cost_cny":5.02}"#.utf8))
+        try expect(decoded.cost == 0.31 && decoded.cost_cny == 5.02, "currency decoding mismatch")
+
         // Store path uses lastUpdated = "更新 HH:mm:ss" (main.swift); strip, don't nest.
         let storeStampText = UsageSummaryBuilder.text(
             usage: usage, range: .today, visibility: allVisible, updated: "更新 21:51:18"
