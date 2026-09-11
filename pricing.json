@@ -1,10 +1,10 @@
 {
  "_meta": {
-  "active_count": 404,
-  "count": 456,
-  "retained_count": 52,
+  "active_count": 415,
+  "count": 473,
+  "retained_count": 58,
   "source": "openrouter/api/v1/models",
-  "updated_at": "2026-09-04 07:23:41+0800"
+  "updated_at": "2026-09-10 17:47:16+0800"
  },
  "models": {
   "ai21/jamba-large-1.7": {
@@ -524,25 +524,25 @@
    "cache_read": 0.0,
    "cache_write": 0.0,
    "canonical_slug": "deepseek/deepseek-chat-v3",
-   "in": 0.32,
+   "in": 0.2574,
    "name": "DeepSeek: DeepSeek V3",
-   "out": 0.89
+   "out": 1.0287
   },
   "deepseek/deepseek-chat-v3-0324": {
-   "cache_read": 0.0,
+   "cache_read": 0.11,
    "cache_write": 0.0,
    "canonical_slug": "deepseek/deepseek-chat-v3-0324",
-   "in": 0.25,
+   "in": 0.29,
    "name": "DeepSeek: DeepSeek V3 0324",
-   "out": 1.0
+   "out": 1.14
   },
   "deepseek/deepseek-chat-v3.1": {
-   "cache_read": 0.55,
+   "cache_read": 0.13,
    "cache_write": 0.0,
    "canonical_slug": "deepseek/deepseek-chat-v3.1",
-   "in": 0.55,
+   "in": 0.25,
    "name": "DeepSeek: DeepSeek V3.1",
-   "out": 1.65
+   "out": 0.95
   },
   "deepseek/deepseek-r1": {
    "cache_read": 0.0,
@@ -600,12 +600,12 @@
    "out": 0.41
   },
   "deepseek/deepseek-v4-flash": {
-   "cache_read": 0.015568,
+   "cache_read": 0.017721,
    "cache_write": 0.0,
    "canonical_slug": "deepseek/deepseek-v4-flash-20260423",
-   "in": 0.07784,
+   "in": 0.088606,
    "name": "DeepSeek: DeepSeek V4 Flash 0423",
-   "out": 0.15568
+   "out": 0.177212
   },
   "deepseek/deepseek-v4-flash-0731": {
    "cache_read": 0.016,
@@ -616,12 +616,12 @@
    "out": 0.18
   },
   "deepseek/deepseek-v4-flash-0731:batch": {
-   "cache_read": 0.03,
+   "cache_read": 0.0035,
    "cache_write": 0.0,
    "canonical_slug": "deepseek/deepseek-v4-flash-20260731",
-   "in": 0.14,
+   "in": 0.11,
    "name": "DeepSeek: DeepSeek V4 Flash 0731 (batch)",
-   "out": 0.28
+   "out": 0.33
   },
   "deepseek/deepseek-v4-flash-vision-exp": {
    "cache_read": 0.007,
@@ -631,29 +631,45 @@
    "name": "DeepSeek: DeepSeek V4 Flash Vision Exp",
    "out": 0.66
   },
+  "deepseek/deepseek-v4-flash-vision-exp:batch": {
+   "cache_read": 0.0035,
+   "cache_write": 0.0,
+   "canonical_slug": "deepseek/deepseek-v4-flash-vision-exp-20260821",
+   "in": 0.11,
+   "name": "DeepSeek: DeepSeek V4 Flash Vision Exp (batch)",
+   "out": 0.33
+  },
   "deepseek/deepseek-v4-pro": {
-   "cache_read": 0.085202,
+   "cache_read": 0.079605,
    "cache_write": 0.0,
    "canonical_slug": "deepseek/deepseek-v4-pro-20260423",
-   "in": 1.022424,
+   "in": 0.95526,
    "name": "DeepSeek: DeepSeek V4 Pro 0423",
-   "out": 2.044848
+   "out": 1.91052
   },
   "deepseek/deepseek-v4-pro-0813": {
+   "cache_read": 0.03498,
+   "cache_write": 0.0,
+   "canonical_slug": "deepseek/deepseek-v4-pro-20260813",
+   "in": 1.0494,
+   "name": "DeepSeek: DeepSeek V4 Pro 0813",
+   "out": 3.1482
+  },
+  "deepseek/deepseek-v4-pro-0813:batch": {
    "cache_read": 0.022,
    "cache_write": 0.0,
    "canonical_slug": "deepseek/deepseek-v4-pro-20260813",
    "in": 0.66,
-   "name": "DeepSeek: DeepSeek V4 Pro 0813",
+   "name": "DeepSeek: DeepSeek V4 Pro 0813 (batch)",
    "out": 1.98
   },
-  "deepseek/deepseek-v4-pro-0813:batch": {
-   "cache_read": 0.13,
+  "deepseek/deepseek-v4.1-flash": {
+   "cache_read": 0.006,
    "cache_write": 0.0,
-   "canonical_slug": "deepseek/deepseek-v4-pro-20260813",
-   "in": 1.32,
-   "name": "DeepSeek: DeepSeek V4 Pro 0813 (batch)",
-   "out": 3.96
+   "canonical_slug": "deepseek/deepseek-v4.1-flash-20260910",
+   "in": 0.3,
+   "name": "DeepSeek: DeepSeek V4.1 Flash",
+   "out": 1.2
   },
   "essentialai/rnj-1-instruct": {
    "cache_read": 0.0,
@@ -1010,15 +1026,16 @@
    "canonical_slug": "ibm-granite/granite-4.1-8b-20260429",
    "in": 0.05,
    "name": "IBM: Granite 4.1 8B",
-   "out": 0.1
+   "out": 0.1,
+   "retired": true
   },
   "ibm-granite/granite-4.2-8b": {
-   "cache_read": 0.05,
+   "cache_read": 0.015,
    "cache_write": 0.0,
    "canonical_slug": "ibm-granite/granite-4.2-8b-20260831",
-   "in": 0.1,
+   "in": 0.06,
    "name": "IBM: Granite 4.2 8B",
-   "out": 0.15
+   "out": 0.25
   },
   "inception/mercury-2": {
    "cache_read": 0.025,
@@ -1028,13 +1045,22 @@
    "name": "Inception: Mercury 2",
    "out": 0.75
   },
+  "inception/mercury-2.5": {
+   "cache_read": 0.004,
+   "cache_write": 0.0,
+   "canonical_slug": "inception/mercury-2.5-20260908",
+   "in": 0.04,
+   "name": "Inception: Mercury 2.5",
+   "out": 0.15
+  },
   "inception/mercury-2.5-preview": {
    "cache_read": 0.004,
    "cache_write": 0.0,
    "canonical_slug": "inception/mercury-2.5-preview-20260831",
    "in": 0.04,
    "name": "Inception: Mercury 2.5 Preview",
-   "out": 0.15
+   "out": 0.15,
+   "retired": true
   },
   "inclusionai/ling-2.6-1t": {
    "cache_read": 0.015,
@@ -1055,7 +1081,7 @@
    "cache_write": 0.0,
    "canonical_slug": "inclusionai/ling-3.0-flash-20260723",
    "in": 0.021,
-   "name": "Ling-3.0-flash",
+   "name": "inclusionAI: Ling 3.0 Flash",
    "out": 0.063
   },
   "inclusionai/ling-3.0-flash-fin": {
@@ -1063,7 +1089,7 @@
    "cache_write": 0.0,
    "canonical_slug": "inclusionai/ling-3.0-flash-fin-20260827",
    "in": 0.06,
-   "name": "Ling 3.0 Flash Fin",
+   "name": "inclusionAI: Ling 3.0 Flash Fin",
    "out": 0.18
   },
   "inclusionai/ring-2.6-1t": {
@@ -1227,12 +1253,12 @@
    "out": 1.1
   },
   "meta/muse-glimmer-30b:batch": {
-   "cache_read": 0.04,
+   "cache_read": 0.02,
    "cache_write": 0.0,
    "canonical_slug": "meta/muse-glimmer-30b-20260810",
-   "in": 0.35,
+   "in": 0.175,
    "name": "Meta: Muse Glimmer 30B (batch)",
-   "out": 1.5
+   "out": 0.75
   },
   "meta/muse-spark-1.1": {
    "cache_read": 0.15,
@@ -1338,12 +1364,12 @@
    "out": 1.2
   },
   "minimax/minimax-m2.5": {
-   "cache_read": 0.027,
+   "cache_read": 0.03,
    "cache_write": 0.0,
    "canonical_slug": "minimax/minimax-m2.5-20260211",
-   "in": 0.27,
+   "in": 0.3,
    "name": "MiniMax: MiniMax M2.5",
-   "out": 1.08
+   "out": 1.2
   },
   "minimax/minimax-m2.7": {
    "cache_read": 0.06,
@@ -1377,6 +1403,14 @@
    "name": "Mistral: Codestral 2508",
    "out": 0.9
   },
+  "mistralai/codestral-2508:batch": {
+   "cache_read": 0.015,
+   "cache_write": 0.0,
+   "canonical_slug": "mistralai/codestral-2508",
+   "in": 0.15,
+   "name": "Mistral: Codestral 2508 (batch)",
+   "out": 0.45
+  },
   "mistralai/devstral-2512": {
    "cache_read": 0.04,
    "cache_write": 0.0,
@@ -1409,6 +1443,14 @@
    "name": "Mistral: Ministral 3 8B 2512",
    "out": 0.15
   },
+  "mistralai/ministral-8b-2512:batch": {
+   "cache_read": 0.0075,
+   "cache_write": 0.0,
+   "canonical_slug": "mistralai/ministral-8b-2512",
+   "in": 0.075,
+   "name": "Mistral: Ministral 3 8B 2512 (batch)",
+   "out": 0.075
+  },
   "mistralai/mistral-large": {
    "cache_read": 0.2,
    "cache_write": 0.0,
@@ -1432,6 +1474,14 @@
    "in": 0.5,
    "name": "Mistral: Mistral Large 3 2512",
    "out": 1.5
+  },
+  "mistralai/mistral-large-2512:batch": {
+   "cache_read": 0.025,
+   "cache_write": 0.0,
+   "canonical_slug": "mistralai/mistral-large-2512",
+   "in": 0.25,
+   "name": "Mistral: Mistral Large 3 2512 (batch)",
+   "out": 0.75
   },
   "mistralai/mistral-medium-3": {
    "cache_read": 0.04,
@@ -1465,6 +1515,14 @@
    "name": "Mistral: Mistral Medium 3.1",
    "out": 2.0
   },
+  "mistralai/mistral-medium-3.1:batch": {
+   "cache_read": 0.02,
+   "cache_write": 0.0,
+   "canonical_slug": "mistralai/mistral-medium-3.1",
+   "in": 0.2,
+   "name": "Mistral: Mistral Medium 3.1 (batch)",
+   "out": 1.0
+  },
   "mistralai/mistral-nemo": {
    "cache_read": 0.0,
    "cache_write": 0.0,
@@ -1496,6 +1554,14 @@
    "in": 0.15,
    "name": "Mistral: Mistral Small 4",
    "out": 0.6
+  },
+  "mistralai/mistral-small-2603:batch": {
+   "cache_read": 0.0075,
+   "cache_write": 0.0,
+   "canonical_slug": "mistralai/mistral-small-2603",
+   "in": 0.075,
+   "name": "Mistral: Mistral Small 4 (batch)",
+   "out": 0.3
   },
   "mistralai/mistral-small-3.1-24b-instruct": {
    "cache_read": 0.0,
@@ -1570,12 +1636,12 @@
    "out": 4.0
   },
   "moonshotai/kimi-k2.7-code": {
-   "cache_read": 0.18,
+   "cache_read": 0.15,
    "cache_write": 0.0,
    "canonical_slug": "moonshotai/kimi-k2.7-code-20260612",
-   "in": 0.66,
+   "in": 0.71,
    "name": "MoonshotAI: Kimi K2.7 Code",
-   "out": 3.4
+   "out": 3.5
   },
   "moonshotai/kimi-k3": {
    "cache_read": 0.3,
@@ -1622,7 +1688,8 @@
    "canonical_slug": "nex-agi/nex-n2-mini",
    "in": 0.025,
    "name": "Nex AGI: Nex-N2-Mini",
-   "out": 0.1
+   "out": 0.1,
+   "retired": true
   },
   "nex-agi/nex-n2-pro": {
    "cache_read": 0.025,
@@ -1630,7 +1697,8 @@
    "canonical_slug": "nex-agi/nex-n2-pro",
    "in": 0.25,
    "name": "Nex AGI: Nex-N2-Pro",
-   "out": 1.0
+   "out": 1.0,
+   "retired": true
   },
   "nousresearch/hermes-2-pro-llama-3-8b": {
    "cache_read": 0.0,
@@ -1669,7 +1737,8 @@
    "canonical_slug": "nousresearch/hermes-4-70b",
    "in": 0.13,
    "name": "Nous: Hermes 4 70B",
-   "out": 0.4
+   "out": 0.4,
+   "retired": true
   },
   "nvidia/llama-3.3-nemotron-super-49b-v1.5": {
    "cache_read": 0.0,
@@ -1695,12 +1764,20 @@
    "out": 0.4
   },
   "nvidia/nemotron-3-ultra-550b-a55b": {
-   "cache_read": 0.12,
+   "cache_read": 0.1875,
    "cache_write": 0.0,
    "canonical_slug": "nvidia/nemotron-3-ultra-550b-a55b-20260604",
-   "in": 0.6,
+   "in": 0.625,
    "name": "NVIDIA: Nemotron 3 Ultra",
-   "out": 2.4
+   "out": 3.125
+  },
+  "nvidia/nemotron-3.5-content-safety": {
+   "cache_read": 0.0,
+   "cache_write": 0.0,
+   "canonical_slug": "nvidia/nemotron-3.5-content-safety-20260604",
+   "in": 0.2,
+   "name": "NVIDIA: Nemotron 3.5 Content Safety",
+   "out": 0.2
   },
   "nvidia/nemotron-3.5-lightning": {
    "cache_read": 0.04,
@@ -2333,6 +2410,38 @@
    "name": "OpenAI: GPT-5 (batch)",
    "out": 5.0
   },
+  "openai/gpt-6-astra": {
+   "cache_read": 1.0,
+   "cache_write": 12.5,
+   "canonical_slug": "openai/gpt-6-astra-20260903",
+   "in": 10.0,
+   "name": "OpenAI: GPT-6 Astra",
+   "out": 50.0
+  },
+  "openai/gpt-6-astra-pro": {
+   "cache_read": 1.0,
+   "cache_write": 12.5,
+   "canonical_slug": "openai/gpt-6-astra-pro-20260903",
+   "in": 10.0,
+   "name": "OpenAI: GPT-6 Astra Pro",
+   "out": 50.0
+  },
+  "openai/gpt-6-astra-pro:batch": {
+   "cache_read": 0.5,
+   "cache_write": 6.25,
+   "canonical_slug": "openai/gpt-6-astra-pro-20260903",
+   "in": 5.0,
+   "name": "OpenAI: GPT-6 Astra Pro (batch)",
+   "out": 25.0
+  },
+  "openai/gpt-6-astra:batch": {
+   "cache_read": 0.5,
+   "cache_write": 6.25,
+   "canonical_slug": "openai/gpt-6-astra-20260903",
+   "in": 5.0,
+   "name": "OpenAI: GPT-6 Astra (batch)",
+   "out": 25.0
+  },
   "openai/gpt-audio": {
    "cache_read": 0.0,
    "cache_write": 0.0,
@@ -2669,9 +2778,9 @@
    "cache_read": 0.0,
    "cache_write": 0.0,
    "canonical_slug": "qwen/qwen3-14b-04-28",
-   "in": 0.12,
+   "in": 0.2275,
    "name": "Qwen: Qwen3 14B",
-   "out": 0.24
+   "out": 0.91
   },
   "qwen/qwen3-235b-a22b": {
    "cache_read": 0.0,
@@ -2682,12 +2791,12 @@
    "out": 1.82
   },
   "qwen/qwen3-235b-a22b-2507": {
-   "cache_read": 0.0175,
+   "cache_read": 0.0,
    "cache_write": 0.0,
    "canonical_slug": "qwen/qwen3-235b-a22b-07-25",
-   "in": 0.0875,
+   "in": 0.22,
    "name": "Qwen: Qwen3 235B A22B Instruct 2507",
-   "out": 0.35
+   "out": 0.88
   },
   "qwen/qwen3-235b-a22b-thinking-2507": {
    "cache_read": 0.0,
@@ -2709,9 +2818,9 @@
    "cache_read": 0.0,
    "cache_write": 0.0,
    "canonical_slug": "qwen/qwen3-30b-a3b-instruct-2507",
-   "in": 0.04815,
+   "in": 0.09,
    "name": "Qwen: Qwen3 30B A3B Instruct 2507",
-   "out": 0.19305
+   "out": 0.3
   },
   "qwen/qwen3-30b-a3b-thinking-2507": {
    "cache_read": 0.0,
@@ -2794,10 +2903,10 @@
    "out": 3.9
   },
   "qwen/qwen3-next-80b-a3b-instruct": {
-   "cache_read": 0.07,
+   "cache_read": 0.0,
    "cache_write": 0.0,
    "canonical_slug": "qwen/qwen3-next-80b-a3b-instruct-2509",
-   "in": 0.1,
+   "in": 0.09,
    "name": "Qwen: Qwen3 Next 80B A3B Instruct",
    "out": 1.1
   },
@@ -2869,9 +2978,9 @@
    "cache_read": 0.0,
    "cache_write": 0.0,
    "canonical_slug": "qwen/qwen3.5-122b-a10b-20260224",
-   "in": 0.29,
+   "in": 0.26,
    "name": "Qwen: Qwen3.5-122B-A10B",
-   "out": 2.4
+   "out": 2.08
   },
   "qwen/qwen3.5-27b": {
    "cache_read": 0.0,
@@ -2882,10 +2991,10 @@
    "out": 1.56
   },
   "qwen/qwen3.5-35b-a3b": {
-   "cache_read": 0.25,
+   "cache_read": 0.15625,
    "cache_write": 0.0,
    "canonical_slug": "qwen/qwen3.5-35b-a3b-20260224",
-   "in": 0.25,
+   "in": 0.3125,
    "name": "Qwen: Qwen3.5-35B-A3B",
    "out": 1.25
   },
@@ -2938,12 +3047,12 @@
    "out": 1.8
   },
   "qwen/qwen3.6-27b": {
-   "cache_read": 0.12,
+   "cache_read": 0.03,
    "cache_write": 0.0,
    "canonical_slug": "qwen/qwen3.6-27b-20260422",
-   "in": 0.6,
+   "in": 0.3,
    "name": "Qwen: Qwen3.6 27B",
-   "out": 3.6
+   "out": 2.0
   },
   "qwen/qwen3.6-35b-a3b": {
    "cache_read": 0.05,
@@ -3039,6 +3148,15 @@
    "canonical_slug": "qwen/qwen3.8-max-20260803",
    "in": 2.0,
    "name": "Qwen: Qwen3.8 Max",
+   "out": 6.0,
+   "retired": true
+  },
+  "qwen/qwen3.8-max-0902": {
+   "cache_read": 0.25,
+   "cache_write": 2.5,
+   "canonical_slug": "qwen/qwen3.8-max-20260902",
+   "in": 2.0,
+   "name": "Qwen: Qwen3.8 Max (0902)",
    "out": 6.0
   },
   "rekaai/reka-edge": {
@@ -3183,12 +3301,12 @@
    "out": 0.295
   },
   "tencent/hy3": {
-   "cache_read": 0.020625,
+   "cache_read": 0.033,
    "cache_write": 0.0,
    "canonical_slug": "tencent/hy3-20260706",
-   "in": 0.0825,
+   "in": 0.132,
    "name": "Tencent: Hy3",
-   "out": 0.33
+   "out": 0.528
   },
   "tencent/hy3-preview": {
    "cache_read": 0.06,
@@ -3273,7 +3391,7 @@
    "cache_read": 0.0,
    "cache_write": 0.0,
    "canonical_slug": "undi95/remm-slerp-l2-13b",
-   "in": 0.45,
+   "in": 0.35,
    "name": "ReMM SLERP 13B",
    "out": 0.65
   },
@@ -3324,6 +3442,14 @@
    "in": 1.25,
    "name": "SpaceXAI: Grok 4.3",
    "out": 2.5
+  },
+  "x-ai/grok-4.3:batch": {
+   "cache_read": 0.16,
+   "cache_write": 0.0,
+   "canonical_slug": "x-ai/grok-4.3-20260430",
+   "in": 1.0,
+   "name": "SpaceXAI: Grok 4.3 (batch)",
+   "out": 2.0
   },
   "x-ai/grok-4.5": {
    "cache_read": 0.3,
@@ -3404,12 +3530,12 @@
    "out": 1.8
   },
   "z-ai/glm-4.6": {
-   "cache_read": 0.11,
+   "cache_read": 0.08,
    "cache_write": 0.0,
    "canonical_slug": "z-ai/glm-4.6",
-   "in": 0.55,
+   "in": 0.43,
    "name": "Z.ai: GLM 4.6",
-   "out": 2.2
+   "out": 1.75
   },
   "z-ai/glm-4.6v": {
    "cache_read": 0.055,
@@ -3428,10 +3554,10 @@
    "out": 1.75
   },
   "z-ai/glm-4.7-flash": {
-   "cache_read": 0.01,
+   "cache_read": 0.0,
    "cache_write": 0.0,
    "canonical_slug": "z-ai/glm-4.7-flash-20260119",
-   "in": 0.06,
+   "in": 0.0605,
    "name": "Z.ai: GLM 4.7 Flash",
    "out": 0.4
   },
@@ -3467,8 +3593,16 @@
    "name": "Z.ai: GLM 5.2",
    "out": 3.036
   },
+  "z-ai/glm-5.2:batch": {
+   "cache_read": 0.07,
+   "cache_write": 0.0,
+   "canonical_slug": "z-ai/glm-5.2-20260616",
+   "in": 0.7,
+   "name": "Z.ai: GLM 5.2 (batch)",
+   "out": 2.2
+  },
   "z-ai/glm-5.3": {
-   "cache_read": 0.14,
+   "cache_read": 0.26,
    "cache_write": 0.0,
    "canonical_slug": "z-ai/glm-5.3-20260816",
    "in": 1.4,
@@ -3484,12 +3618,20 @@
    "out": 0.25
   },
   "z-ai/glm-5.3-flash:batch": {
-   "cache_read": 0.03,
+   "cache_read": 0.015,
    "cache_write": 0.0,
    "canonical_slug": "z-ai/glm-5.3-flash-20260826",
-   "in": 0.15,
+   "in": 0.075,
    "name": "Z.ai: GLM 5.3 Flash (batch)",
-   "out": 0.5
+   "out": 0.25
+  },
+  "z-ai/glm-5.3:batch": {
+   "cache_read": 0.13,
+   "cache_write": 0.0,
+   "canonical_slug": "z-ai/glm-5.3-20260816",
+   "in": 0.7,
+   "name": "Z.ai: GLM 5.3 (batch)",
+   "out": 2.2
   },
   "z-ai/glm-5v-turbo": {
    "cache_read": 0.24,
@@ -3556,12 +3698,12 @@
    "out": 12.0
   },
   "~moonshotai/kimi-latest": {
-   "cache_read": 0.29,
+   "cache_read": 0.24,
    "cache_write": 0.0,
    "canonical_slug": "~moonshotai/kimi-latest",
-   "in": 2.5,
+   "in": 2.4,
    "name": "MoonshotAI Kimi Latest",
-   "out": 14.0
+   "out": 12.0
   },
   "~openai/gpt-latest": {
    "cache_read": 0.2,
@@ -3596,12 +3738,12 @@
    "out": 0.25
   },
   "~z-ai/glm-latest": {
-   "cache_read": 0.1,
+   "cache_read": 0.2015,
    "cache_write": 0.0,
    "canonical_slug": "~z-ai/glm-latest",
-   "in": 1.15,
+   "in": 1.085,
    "name": "Z.ai: GLM Latest",
-   "out": 3.5
+   "out": 3.41
   }
  }
 }

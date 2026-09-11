@@ -917,6 +917,12 @@ def ledger_flush():
     try:
         fresh = _load_ledger_from_disk()
         memo = _LEDGER_CACHE["data"]
+        memo_qodercli_schema = int(memo.get("qodercli_schema", 0) or 0)
+        fresh_qodercli_schema = int(fresh.get("qodercli_schema", 0) or 0)
+        if memo_qodercli_schema > fresh_qodercli_schema:
+            fresh.setdefault("tools", {})["qodercli"] = dict(
+                memo.get("tools", {}).get("qodercli", {}))
+            fresh["qodercli_schema"] = memo_qodercli_schema
         for tool, days in memo.get("tools", {}).items():
             stored = fresh["tools"].setdefault(tool, {})
             for dk, day in days.items():
@@ -7337,21 +7343,34 @@ def _scan_hermes_db(db_path, _sq):
 
 
 # ---------- Qoder CLI ----------
-# qodercli(独立 CLI,数据目录 ~/.qoder,与 Qoder IDE / QoderWork 无关)。
-# transcript 中 usage 恒为空(服务端不下发 token),因此只采会话/活跃维度:
-# 会话数、用户消息数(turns)、模型调用数(calls)、工具调用(tools)、活跃时长,
-# token 为文本 chars/4 估算值(est)。
+# Qoder CLI 与新版 Qoder App 共用 ~/.qoder/projects Agent transcript。
+# 旧 Qoder Desktop 的 transcript/ 镜像由 local.db 统计，不进入此采集器。
 _QODERCLI_DIR = os.path.join(HOME, ".qoder", "projects")
+_QODERCLI_PARSER_VERSION = 2
+_QODERCLI_LEDGER_VERSION = 1
+
+
+def _prepare_qodercli_ledger():
+    ledger = _load_ledger()
+    if ledger.get("qodercli_schema") == _QODERCLI_LEDGER_VERSION:
+        return
+    ledger.setdefault("tools", {})["qodercli"] = {}
+    ledger["qodercli_schema"] = _QODERCLI_LEDGER_VERSION
+    _LEDGER_CACHE["dirty"] = True
 
 
 def _qodercli_dir():
-    return os.environ.get("TOKEI_QODERCLI_DIR", _QODERCLI_DIR)
+    return os.path.abspath(os.path.expanduser(
+        os.environ.get("TOKEI_QODERCLI_DIR", _QODERCLI_DIR)))
 
 
 def _empty_qodercli():
-    ranges = {k: {"in": 0, "out": 0, "sessions": 0, "calls": 0, "sub_agents": 0,
+    ranges = {k: {"in": 0, "out": 0, "cr": 0, "cw": 0, "credits": 0.0,
+                  "usage_calls": 0, "usage_available": False,
+                  "sessions": 0, "calls": 0, "sub_agents": 0,
                   "duration": 0, "turns": 0, "tools": 0, "est": 0,
-                  "ctx_sum": 0.0, "ctx_count": 0} for k in RANGE_KEYS}
+                  "ctx_sum": 0.0, "ctx_count": 0, "models": {}}
+              for k in RANGE_KEYS}
     return {"ranges": ranges, "model": None}
 
 
@@ -7363,14 +7382,68 @@ def _est_tokens(text):
     return cjk + (len(text) - cjk) / 4
 
 
+def _qodercli_int(value):
+    try:
+        return max(int(value or 0), 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _qodercli_usage(message):
+    usage = message.get("usage") or {}
+    if not isinstance(usage, dict):
+        usage = {}
+    raw_in = _qodercli_int(usage.get("input_tokens"))
+    cr = _qodercli_int(usage.get("cache_read_input_tokens"))
+    if "cache_creation_input_tokens" in usage:
+        cw = _qodercli_int(usage.get("cache_creation_input_tokens"))
+    else:
+        cache_creation = usage.get("cache_creation") or {}
+        cw = sum(_qodercli_int(cache_creation.get(key)) for key in (
+            "ephemeral_5m_input_tokens", "ephemeral_1h_input_tokens"))
+    out = _qodercli_int(usage.get("output_tokens"))
+    inp = max(raw_in - cr - cw, 0)
+    credit_value = usage.get("credits")
+    if credit_value is None:
+        credit_value = usage.get("original_credits")
+    try:
+        credits = max(float(credit_value or 0), 0.0)
+    except (TypeError, ValueError):
+        credits = 0.0
+    request_id = usage.get("request_id")
+    return {"in": inp, "out": out, "cr": cr, "cw": cw, "credits": credits,
+            "usage_available": raw_in + out + cr + cw > 0,
+            "request_id": str(request_id) if request_id else None}
+
+
+def _merge_qodercli_event(existing, candidate):
+    if existing is None:
+        return dict(candidate)
+    existing_tokens = sum(existing.get(key, 0) for key in ("in", "out", "cr", "cw"))
+    candidate_tokens = sum(candidate.get(key, 0) for key in ("in", "out", "cr", "cw"))
+    merged = dict(candidate if candidate_tokens > existing_tokens else existing)
+    other = existing if candidate_tokens > existing_tokens else candidate
+    merged["credits"] = max(float(existing.get("credits", 0) or 0),
+                              float(candidate.get("credits", 0) or 0))
+    merged["tools"] = sorted(set(existing.get("tools") or []) | set(candidate.get("tools") or []))
+    merged["est"] = max(float(existing.get("est", 0) or 0),
+                         float(candidate.get("est", 0) or 0))
+    merged["usage_available"] = bool(
+        existing.get("usage_available") or candidate.get("usage_available"))
+    if not merged.get("model"):
+        merged["model"] = other.get("model")
+    return merged
+
+
 def _parse_qodercli_file(path):
-    """解析单个 qodercli transcript,返回 {"days": {day: {...}}, "model": str|None}。"""
+    """解析单个 Qoder Agent transcript，保留请求事件供跨文件去重。"""
     days = {}
+    responses = {}
+    message_requests = {}
     model = None
     prev_ts = None
-    seen_ids = set()
     with open(path, "r", errors="replace") as f:
-        for line in f:
+        for line_number, line in enumerate(f, 1):
             line = line.strip()
             if not line:
                 continue
@@ -7380,9 +7453,9 @@ def _parse_qodercli_file(path):
                 continue
             typ = row.get("type")
             if typ == "runtime-config":
-                m = row.get("model")
-                if m:
-                    model = m
+                configured_model = row.get("model")
+                if configured_model:
+                    model = configured_model
                 continue
             if typ not in ("user", "assistant"):
                 continue
@@ -7391,58 +7464,150 @@ def _parse_qodercli_file(path):
                 continue
             dt = dt.astimezone()
             dk = dt.date().isoformat()
-            day = days.setdefault(dk, {"calls": 0, "turns": 0, "tools": 0,
-                                       "est": 0.0, "active": 0.0})
+            day = days.setdefault(dk, {"turns": 0, "est": 0.0, "active": 0.0})
             ts = dt.timestamp()
-            # 活跃时长:相邻事件间隔≤5min 才累计,排除挂机空档
             if prev_ts is not None:
                 gap = ts - prev_ts
                 if 0 < gap <= 300:
                     day["active"] += gap
             prev_ts = ts
-            content = (row.get("message") or {}).get("content")
+            message = row.get("message") or {}
+            content = message.get("content")
             if typ == "assistant":
-                # 一次模型响应按内容块拆成多行(共享 message.id),去重后才是真实调用数
-                mid = (row.get("message") or {}).get("id")
-                if not mid or mid not in seen_ids:
-                    if mid:
-                        seen_ids.add(mid)
-                    day["calls"] += 1
+                usage = _qodercli_usage(message)
+                message_id = message.get("id")
+                row_id = row.get("uuid") or row.get("id")
+                if usage["request_id"]:
+                    response_id = usage["request_id"]
+                    if message_id:
+                        message_key = str(message_id)
+                        prior = None if message_key in message_requests \
+                            else responses.pop(message_key, None)
+                        message_requests[message_key] = response_id
+                    else:
+                        prior = None
+                elif message_id and str(message_id) in message_requests:
+                    response_id = message_requests[str(message_id)]
+                    prior = None
+                else:
+                    response_id = str(message_id or row_id or f"{path}:{line_number}")
+                    prior = None
+                assistant_est = 0.0
+                tool_ids = set()
                 if isinstance(content, list):
-                    for block in content:
+                    for index, block in enumerate(content):
                         if not isinstance(block, dict):
                             continue
-                        bt = block.get("type")
-                        if bt == "tool_use":
-                            day["tools"] += 1
+                        block_type = block.get("type")
+                        if block_type == "tool_use":
+                            tool_ids.add(str(block.get("id") or f"{response_id}:{index}"))
                             try:
-                                day["est"] += _est_tokens(json.dumps(block.get("input") or {}, ensure_ascii=False))
+                                assistant_est += _est_tokens(json.dumps(
+                                    block.get("input") or {}, ensure_ascii=False))
                             except (TypeError, ValueError):
                                 pass
-                        elif bt == "text":
-                            day["est"] += _est_tokens(block.get("text"))
-                        elif bt == "thinking":
-                            day["est"] += _est_tokens(block.get("thinking"))
+                        elif block_type == "text":
+                            assistant_est += _est_tokens(block.get("text"))
+                        elif block_type == "thinking":
+                            assistant_est += _est_tokens(block.get("thinking"))
+                event_model = message.get("model") or model
+                if event_model:
+                    model = event_model
+                event = {"id": str(response_id), "day": dk, "hour": dt.hour,
+                         "model": event_model, "est": assistant_est,
+                         "tools": sorted(tool_ids), **usage}
+                existing = responses.get(str(response_id))
+                if prior is not None:
+                    existing = _merge_qodercli_event(existing, prior)
+                responses[str(response_id)] = _merge_qodercli_event(existing, event)
             elif not row.get("isMeta") and not row.get("isSidechain"):
-                # 只统计真实用户输入,跳过命令回显/系统注入
-                if isinstance(content, str) and content and not content.startswith("<"):
+                texts = []
+                if isinstance(content, str):
+                    texts = [content]
+                elif isinstance(content, list):
+                    texts = [block.get("text") for block in content
+                             if isinstance(block, dict) and block.get("type") == "text"]
+                texts = [text for text in texts if text and not text.startswith("<")]
+                if texts:
                     day["turns"] += 1
-                    day["est"] += _est_tokens(content)
-    return {"days": days, "model": model}
+                    day["est"] += sum(_est_tokens(text) for text in texts)
+    return {"days": days, "responses": list(responses.values()), "model": model}
+
+
+def _qodercli_usage_days(entries, use_cached=True):
+    cached_days = entries.get("_usage_days")
+    if use_cached and isinstance(cached_days, dict):
+        return cached_days
+    request_index = entries.get("_requests")
+    if isinstance(request_index, dict):
+        responses = request_index
+    else:
+        responses = {}
+        for path, entry in entries.items():
+            if path.startswith("_") or not isinstance(entry, dict):
+                continue
+            for event in entry.get("responses", []):
+                event_id = event.get("id")
+                if not event_id:
+                    continue
+                responses[event_id] = _merge_qodercli_event(
+                    responses.get(event_id), event)
+
+    days = {}
+    for event in responses.values():
+        dk = event.get("day")
+        try:
+            date.fromisoformat(dk)
+        except (TypeError, ValueError):
+            continue
+        day = days.setdefault(dk, {"in": 0, "out": 0, "cr": 0, "cw": 0,
+            "credits": 0.0, "usage_calls": 0, "calls": 0, "tools": 0,
+            "est": 0, "duration": 0, "models": {}, "hours": [0] * 24,
+            "_cost_version": _QODERCLI_LEDGER_VERSION})
+        day["calls"] += 1
+        day["tools"] += len(event.get("tools") or [])
+        day["est"] += int(event.get("est", 0))
+        day["credits"] += float(event.get("credits", 0.0) or 0.0)
+        token_total = 0
+        for field in ("in", "out", "cr", "cw"):
+            value = int(event.get(field, 0) or 0)
+            day[field] += value
+            token_total += value
+        if event.get("usage_available") and token_total > 0:
+            day["usage_calls"] += 1
+        hour = event.get("hour")
+        if isinstance(hour, int) and 0 <= hour < 24:
+            day["hours"][hour] += token_total
+        model_name = event.get("model")
+        if model_name and (token_total > 0 or event.get("credits", 0)):
+            model_usage = day["models"].setdefault(model_name,
+                {"in": 0, "out": 0, "cr": 0, "cw": 0, "credits": 0.0})
+            for field in ("in", "out", "cr", "cw"):
+                model_usage[field] += int(event.get(field, 0) or 0)
+            model_usage["credits"] += float(event.get("credits", 0.0) or 0.0)
+    return days
 
 
 def scan_qodercli(bounds, cache):
+    _prepare_qodercli_ledger()
     ledger_touch("qodercli")
     fc = cache.setdefault("qodercli", {})
+    if fc.get("_parser") != _QODERCLI_PARSER_VERSION:
+        fc.clear()
+        fc["_parser"] = _QODERCLI_PARSER_VERSION
+        fc["_requests"] = {}
+        cache["_dirty"] = True
+    request_index = fc.setdefault("_requests", {})
     root = _qodercli_dir()
     paths = []
     if os.path.isdir(root):
         paths = glob.glob(os.path.join(root, "*", "*.jsonl"))
-        paths += glob.glob(os.path.join(root, "*", "transcript", "*.jsonl"))
         paths += glob.glob(os.path.join(root, "*", "*", "subagents", "*.jsonl"))
+        paths = sorted(set(paths))
 
     stale = set(fc)
-    stale.discard("_model")
+    for internal_key in ("_model", "_parser", "_requests", "_usage_days"):
+        stale.discard(internal_key)
     latest_model = fc.get("_model")
     latest_mtime = -1
     for path in paths:
@@ -7453,7 +7618,8 @@ def scan_qodercli(bounds, cache):
             continue
         sig = f"{st.st_size}|{st.st_mtime_ns}"
         entry = fc.get(path)
-        if isinstance(entry, dict) and entry.get("sig") == sig:
+        if (isinstance(entry, dict) and entry.get("sig") == sig
+                and entry.get("parser") == _QODERCLI_PARSER_VERSION):
             if entry.get("model") and st.st_mtime_ns > latest_mtime:
                 latest_mtime = st.st_mtime_ns
                 latest_model = entry["model"]
@@ -7462,7 +7628,13 @@ def scan_qodercli(bounds, cache):
             parsed = _parse_qodercli_file(path)
         except OSError:
             continue
-        fc[path] = {"sig": sig, "days": parsed["days"], "model": parsed["model"],
+        for event in parsed["responses"]:
+            event_id = event.get("id")
+            if event_id:
+                request_index[event_id] = _merge_qodercli_event(
+                    request_index.get(event_id), event)
+        fc[path] = {"sig": sig, "parser": _QODERCLI_PARSER_VERSION,
+                    "days": parsed["days"], "model": parsed["model"],
                     "sub": (os.sep + "subagents" + os.sep) in path}
         cache["_dirty"] = True
         if parsed["model"] and st.st_mtime_ns > latest_mtime:
@@ -7476,47 +7648,55 @@ def scan_qodercli(bounds, cache):
         cache["_dirty"] = True
 
     B = _empty_qodercli()["ranges"]
-    # 会话/消息/子agent 维度只能来自现存 transcript;token 类维度走账本
-    live_days = {}
+    live_days = _qodercli_usage_days(fc, use_cached=False)
+    range_sessions = {key: set() for key in RANGE_KEYS}
+    range_subagents = {key: set() for key in RANGE_KEYS}
     for path, entry in fc.items():
-        if path == "_model" or not isinstance(entry, dict):
+        if path.startswith("_") or not isinstance(entry, dict):
             continue
         is_sub = entry.get("sub", False)
-        first_day = min(entry.get("days", {}), default=None)
         for dk, day in entry.get("days", {}).items():
             try:
                 d = date.fromisoformat(dk)
             except ValueError:
                 continue
-            agg = live_days.setdefault(dk, {"calls": 0, "tools": 0, "est": 0, "duration": 0})
-            agg["calls"] += day.get("calls", 0)
-            agg["tools"] += day.get("tools", 0)
+            agg = live_days.setdefault(dk, {"in": 0, "out": 0, "cr": 0, "cw": 0,
+                "credits": 0.0, "usage_calls": 0, "calls": 0, "tools": 0,
+                "est": 0, "duration": 0, "models": {}, "hours": [0] * 24,
+                "_cost_version": _QODERCLI_LEDGER_VERSION})
             agg["est"] += int(day.get("est", 0))
             agg["duration"] += int(day.get("active", 0.0) * 1000)
-            ks = classify_date(d, bounds)
-            if not ks:
-                continue
-            for k in ks:
-                b = B[k]
+            for key in classify_date(d, bounds):
                 if is_sub:
-                    # 子 agent transcript:不算人类会话/消息,首个活跃日计 1 个子 agent
-                    if dk == first_day:
-                        b["sub_agents"] += 1
+                    range_subagents[key].add(path)
                 else:
-                    b["sessions"] += 1
-                    b["turns"] += day.get("turns", 0)
+                    range_sessions[key].add(path)
+                    B[key]["turns"] += day.get("turns", 0)
 
+    if fc.get("_usage_days") != live_days:
+        fc["_usage_days"] = live_days
+        cache["_dirty"] = True
+    for key in RANGE_KEYS:
+        B[key]["sessions"] = len(range_sessions[key])
+        B[key]["sub_agents"] = len(range_subagents[key])
     for dk, day in ledger_reconcile("qodercli", live_days).items():
         try:
             d = date.fromisoformat(dk)
         except ValueError:
             continue
-        for k in classify_date(d, bounds):
-            b = B[k]
-            b["calls"] += day.get("calls", 0)
-            b["tools"] += day.get("tools", 0)
-            b["est"] += int(day.get("est", 0))
-            b["duration"] += int(day.get("duration", 0))
+        for key in classify_date(d, bounds):
+            target = B[key]
+            for field in ("in", "out", "cr", "cw", "calls", "tools",
+                          "usage_calls", "est", "duration"):
+                target[field] += int(day.get(field, 0) or 0)
+            target["credits"] += float(day.get("credits", 0.0) or 0.0)
+            target["usage_available"] = target["usage_calls"] > 0
+            for model_name, usage in (day.get("models") or {}).items():
+                model_target = target["models"].setdefault(model_name,
+                    {"in": 0, "out": 0, "cr": 0, "cw": 0, "credits": 0.0})
+                for field in ("in", "out", "cr", "cw"):
+                    model_target[field] += int(usage.get(field, 0) or 0)
+                model_target["credits"] += float(usage.get("credits", 0.0) or 0.0)
     return {"ranges": B, "model": fc.get("_model")}
 
 
@@ -10253,8 +10433,18 @@ def compute():
 
     def qodercli_range(b):
         r = qoderwork_range(b)
-        r["tools"] = b.get("tools", 0)
-        r["est"] = int(b.get("est", 0))
+        input_total = b.get("in", 0) + b.get("cr", 0) + b.get("cw", 0)
+        r.update({
+            "cr": b.get("cr", 0),
+            "cw": b.get("cw", 0),
+            "credits": b.get("credits", 0.0),
+            "usage_calls": b.get("usage_calls", 0),
+            "usage_available": bool(b.get("usage_calls", 0)),
+            "hit": (b.get("cr", 0) / input_total * 100) if input_total else 0.0,
+            "models": _format_token_models(b.get("models", {}), include_prices=False),
+            "tools": b.get("tools", 0),
+            "est": int(b.get("est", 0)),
+        })
         return r
 
     qcliranges = {k: qodercli_range(qcli["ranges"][k]) for k in RANGE_KEYS}
@@ -11434,6 +11624,19 @@ def build_daily_costs(period="all", refresh=True, _cache=None):
             m["out"] += output
             m["cr"] += cached
 
+    for dk, day in _qodercli_usage_days(cache.get("qodercli", {})).items():
+        if cutoff and dk < cutoff:
+            continue
+        d = days.setdefault(dk, _empty())
+        _add_day_tokens(d, dk, "qodercli", token_total(day))
+        for model_name, usage in day.get("models", {}).items():
+            name = f"{nice_model(model_name)} (Qoder CLI)"
+            model = models.setdefault(
+                name, {"cost": 0.0, "in": 0, "out": 0, "cr": 0, "cw": 0,
+                       "reason": 0, "tool": "qodercli"})
+            for field in ("in", "out", "cr", "cw"):
+                model[field] += int(usage.get(field, 0) or 0)
+
     # --- 持久账本高水位合并:逐工具逐日取 max,被清理的历史天由账本兜底补进序列 ---
     # 同一份数据的存档与实时绝不相加:cost 直接与该工具当日成本列取 max;
     # tokens 列只补"账本白名单token(_ledger_token_sum) 超出该工具当日实时token"的差额。
@@ -11907,6 +12110,18 @@ def build_wrapped(period="all", refresh=True, _cache=None):
             add_hours(dk, day.get("hours"))
             nm = f"{nice_model(model_name)} (Qoder)"
             model_tok[nm] = model_tok.get(nm, 0) + tok
+
+    # --- Qoder CLI (deduplicated transcript usage, no cost) ---
+    for dk, day in _qodercli_usage_days(cache.get("qodercli", {})).items():
+        if cutoff and dk < cutoff:
+            continue
+        tok = token_total(day)
+        day_tokens[dk] = day_tokens.get(dk, 0) + tok
+        weekday[date.fromisoformat(dk).weekday()] += tok
+        add_hours(dk, day.get("hours"))
+        for model_name, usage in day.get("models", {}).items():
+            name = f"{nice_model(model_name)} (Qoder CLI)"
+            model_tok[name] = model_tok.get(name, 0) + token_total(usage)
 
     # --- 持久账本合并:全部指标统一账本口径 ---
     # 账本是同一份数据的高水位存档:同一天取 max(账本合计, 实时值),绝不相加以免重复计数

@@ -251,9 +251,10 @@ enum UsageSummaryBuilder {
             let r = usage.qodercli.ranges.get(range)
             let line = Line(
                 id: "qodercli", name: "Qoder CLI", cost: nil,
-                tokens: nil, sessions: r.sessions, calls: r.calls,
-                input: nil, output: nil, cacheRead: nil, cacheWrite: nil,
-                reason: nil, hit: nil, extra: nil
+                tokens: r.totalTokens, sessions: r.sessions, calls: r.calls,
+                input: r.in, output: r.out, cacheRead: r.cr, cacheWrite: r.cw,
+                reason: nil, hit: r.hit > 0 ? r.hit : nil,
+                extra: r.credits > 0 ? "\(Fmt.credits(r.credits)) Credits" : nil
             )
             if !line.isEmpty { lines.append(line) }
         }
