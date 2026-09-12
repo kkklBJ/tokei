@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# TOKEI_COLLECTOR_REVISION=4
+# TOKEI_COLLECTOR_REVISION=5
 # <bitbar.title>AI Usage Bar</bitbar.title>
 # <bitbar.version>v0.1</bitbar.version>
 # <bitbar.author>local</bitbar.author>
@@ -726,7 +726,7 @@ _SCAN_CACHE_FILE = _DEFAULT_SCAN_CACHE_FILE
 _SCAN_CACHE_VERSION = 21
 _SCAN_CACHE_MIGRATABLE_VERSION = 19
 _CODEX_EVENT_CACHE_SUFFIX = ".codex-events"
-_CODEX_PARSER_VERSION = 4
+_CODEX_PARSER_VERSION = 5
 _CODEX_SCAN_CHECKPOINT_INTERVAL = 5.0
 _GEMINI_DAYS_CACHE_KEY = "_gemini_dashboard_days"
 _GROK_DAYS_CACHE_KEY = "_grok_dashboard_days"
@@ -2375,11 +2375,16 @@ def _codex_event_metadata(events):
     }
 
 
-def _codex_days_from_cached_events(file_path, start_index=0, event_count=None):
+def _codex_days_from_cached_events(file_path, start_index=0, event_count=None, seen_responses=None):
     days = {}
     limit = None if event_count is None else max(int(event_count) - start_index, 0)
     for event in _iter_codex_cached_events(
             file_path, start_index=start_index, limit=limit):
+        response_id = event[12] if len(event) > 12 else None
+        if seen_responses is not None and response_id:
+            if response_id in seen_responses:
+                continue
+            seen_responses.add(response_id)
         _codex_add_event(days, event)
     return days
 
@@ -3016,34 +3021,36 @@ def _codex_rollout_files():
 
 
 def _codex_canonical_file_cache(file_cache):
-    """Choose one complete physical copy for each logical Codex session."""
+    """Keep resumed segments; discard only copies covered by another segment."""
     canonical = {}
-    selected = {}
-    for file_path, entry in file_cache.items():
+    groups = {}
+    for path, entry in file_cache.items():
         if not isinstance(entry, dict):
             continue
-        session_id = entry.get("session_id")
-        logical_id = ("session", str(session_id)) if session_id else (
-            "rollout", os.path.basename(file_path))
+        sid = entry.get("session_id")
+        key = ("session", str(sid)) if sid else ("rollout", os.path.basename(path))
+        groups.setdefault(key, []).append((path, entry))
+    def score(item):
+        entry = item[1]
         events = entry.get("events") or []
-        events = events if isinstance(events, list) else []
-        event_count = int(entry.get("event_count", len(events)) or 0)
-        event_timestamps = [str(event[0]) for event in events
-                            if isinstance(event, list) and event]
-        last_event_ts = str(entry.get("last_event_ts") or
-                            max(event_timestamps, default=""))
-        try:
-            parsed_size = int(entry.get("parsed_size", 0) or 0)
-        except (TypeError, ValueError):
-            parsed_size = 0
-        score = (event_count, last_event_ts, parsed_size)
-        previous = selected.get(logical_id)
-        if previous is not None and score <= previous[0]:
-            continue
-        if previous is not None:
-            canonical.pop(previous[1], None)
-        selected[logical_id] = (score, file_path)
-        canonical[file_path] = entry
+        timestamps = [str(e[0]) for e in events if isinstance(e, list) and e]
+        return (int(entry.get("event_count", len(events)) or 0),
+                str(entry.get("last_event_ts") or max(timestamps, default="")),
+                int(entry.get("parsed_size", 0) or 0))
+    for copies in groups.values():
+        covered = set()
+        legacy_selected = False
+        for path, entry in sorted(copies, key=score, reverse=True):
+            ids = set(entry.get("response_ids") or [])
+            if ids:
+                if ids <= covered:
+                    continue
+                covered.update(ids)
+            else:
+                if legacy_selected:
+                    continue
+                legacy_selected = True
+            canonical[path] = entry
     return canonical
 
 
@@ -3315,14 +3322,28 @@ def scan_codex(bounds, cache):
             entry["canonical"] = is_canonical
             cache["_dirty"] = True
 
-    for f in dedupe_paths:
+    # Different runtime segments can overlap responses while sharing a thread ID.
+    # Rebuild these groups together so a warm scan cannot retain a stale duplicate.
+    session_groups = {}
+    for path, entry in canonical_fc.items():
+        session_groups.setdefault(entry.get("session_id") or path, []).append(path)
+    shared_seen = {}
+    for sid, paths in session_groups.items():
+        if len(paths) > 1:
+            seen = set()
+            for path in paths:
+                shared_seen[path] = seen
+                dedupe_paths.add(path)
+
+    for f in sorted(dedupe_paths):
         entry = canonical_fc.get(f)
         if entry is None:
             continue
         try:
             drop_count, dedupe_open = _codex_cached_drop_count(f, entry, canonical_fc)
             deduped_days = _codex_days_from_cached_events(
-                f, start_index=drop_count, event_count=entry.get("event_count"))
+                f, start_index=drop_count, event_count=entry.get("event_count"),
+                seen_responses=shared_seen.get(f))
         except OSError:
             _codex_clear_event_cache(fc)
             cache["_dirty"] = True
