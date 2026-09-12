@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# TOKEI_COLLECTOR_REVISION=5
+# TOKEI_COLLECTOR_REVISION=6
 # <bitbar.title>AI Usage Bar</bitbar.title>
 # <bitbar.version>v0.1</bitbar.version>
 # <bitbar.author>local</bitbar.author>
@@ -726,7 +726,7 @@ _SCAN_CACHE_FILE = _DEFAULT_SCAN_CACHE_FILE
 _SCAN_CACHE_VERSION = 21
 _SCAN_CACHE_MIGRATABLE_VERSION = 19
 _CODEX_EVENT_CACHE_SUFFIX = ".codex-events"
-_CODEX_PARSER_VERSION = 5
+_CODEX_PARSER_VERSION = 6
 _CODEX_SCAN_CHECKPOINT_INTERVAL = 5.0
 _GEMINI_DAYS_CACHE_KEY = "_gemini_dashboard_days"
 _GROK_DAYS_CACHE_KEY = "_grok_dashboard_days"
@@ -932,6 +932,9 @@ def ledger_flush():
                     for key in ("projects", "sessions"):
                         if isinstance(day.get(key), list):
                             stored[dk][key] = sorted(set(stored[dk].get(key) or []) | set(day[key]))
+                elif (tool == "opencode" and kept
+                        and _ledger_token_sum(kept, tool) > _ledger_token_sum(day, tool)):
+                    continue  # Preserve concurrent historical snapshots too.
                 elif tool == "codex" and kept and "_sources" not in kept:
                     stored[dk] = _codex_legacy_day(day if _ledger_source_preferred(day, kept) else kept)
                 elif (kept is None
@@ -971,10 +974,10 @@ def _save_ledger(ledger):
 
 
 def _ledger_day_total(day):
-    """字段无关的当日体量:累加所有数值字段(cost 除外),适配任意工具的 day 结构。"""
+    """字段无关的当日体量:累加所有数值字段(cost/cost_cny 除外),适配任意工具的 day 结构。"""
     return sum(float(v) for k, v in day.items()
                if isinstance(v, (int, float)) and not isinstance(v, bool)
-               and k != "cost" and not k.startswith("_"))
+               and k not in ("cost", "cost_cny") and not k.startswith("_"))
 
 
 def _ledger_cost_version(day):
@@ -1064,6 +1067,16 @@ def _ledger_merge_sources(kept, current, tool=None):
     for source, snapshot in current.items():
         if _ledger_source_preferred(snapshot, sources.get(source)):
             sources[source] = snapshot
+    # A fully reconstructed token remainder has no remaining token-priced cost.
+    # This also repairs orphan USD from an earlier aggregate-to-CNY migration.
+    if (tool == "deepseek_harness" and "legacy" in sources
+            and current and any(day.get("cost_cny", 0) > 0 for day in current.values())
+            and _ledger_token_sum(kept, tool) > 0
+            and _ledger_token_sum(sources["legacy"], tool) == 0):
+        legacy = sources["legacy"] = dict(sources["legacy"])
+        legacy["cost"] = 0.0
+        legacy["cost_cny"] = 0.0
+        legacy["models"] = {}
     if tool == "codex" and "legacy" in sources:
         sources["legacy"] = _codex_legacy_day(sources["legacy"])
     result = {}
@@ -1154,6 +1167,12 @@ def ledger_reconcile(tool, live_days, source_days=None):
         kept = stored.get(dk)
         kept_version = _ledger_cost_version(kept)
         live_version = _ledger_cost_version(live)
+        # An aggregate OpenCode day cannot distinguish repricing from deleted
+        # logs. Keep its historical snapshot until the full token total returns.
+        if (tool == "opencode" and kept
+                and _ledger_token_sum(kept, tool) > _ledger_token_sum(live, tool)):
+            merged[dk] = kept
+            continue
         if (kept and kept_version > live_version
                 or (kept and kept_version == live_version
                     and _ledger_day_total(kept) > _ledger_day_total(live))):
@@ -3186,6 +3205,17 @@ def scan_codex(bounds, cache):
                         snapshot_key = [response_total.get(k, 0) or 0 for k in (
                             "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens")] + response_usage
                         if response_total and snapshot_key == last_legacy_snapshot:
+                            # Attach identity to the legacy event already counted, so
+                            # overlapping runtime segments can deduplicate it too.
+                            prior_events = events
+                            if not prior_events and append_from is not None:
+                                prior_events = list(_iter_codex_cached_events(f))
+                            if (response_id and prior_events
+                                    and list(prior_events[-1][2:10]) == snapshot_key):
+                                prior_events[-1][12] = response_id
+                                if prior_events is not events:
+                                    entry["event_cache_size"] = _codex_write_event_cache(f, prior_events)
+                                    dedupe_paths.add(f)
                             last_legacy_snapshot = None
                             continue  # Legacy-first dual write, already counted.
                         pending_responses.append(response_usage)
@@ -3300,6 +3330,7 @@ def scan_codex(bounds, cache):
                 "last_event_ts": metadata["last_event_ts"],
                 "drop_count": drop_count, "dedupe_open": dedupe_open,
                 "canonical": was_canonical,
+                "dedupe_peers": entry.get("dedupe_peers") if isinstance(entry, dict) else None,
             }
             cache["_dirty"] = True
             if _time.monotonic() >= next_checkpoint:
@@ -3329,6 +3360,13 @@ def scan_codex(bounds, cache):
         session_groups.setdefault(entry.get("session_id") or path, []).append(path)
     shared_seen = {}
     for sid, paths in session_groups.items():
+        peers = sorted(paths)
+        for path in paths:
+            entry = canonical_fc[path]
+            if entry.get("dedupe_peers") != peers:
+                entry["dedupe_peers"] = peers
+                dedupe_paths.add(path)
+                cache["_dirty"] = True
         if len(paths) > 1:
             seen = set()
             for path in paths:

@@ -85,6 +85,42 @@ class TokenAccountingTests(unittest.TestCase):
         cold = self.scan({})
         self.assertEqual(warm, cold)
 
+    def test_segment_becoming_superset_rebuilds_warm_deduplication(self):
+        self.write([self.response('r1', self.usage()),
+                    self.response('r2', self.usage(50, 5, 0))])
+        segment = self.write([self.response('r2', self.usage(50, 5, 0)),
+                              self.response('r3', self.usage(70, 7, 0))], name='segment')
+        segment.write_text(segment.read_text().replace('"id": "segment"', '"id": "s"'))
+        cache = {}
+        self.scan(cache)
+        with segment.open('a') as f:
+            for row in [self.response('r1', self.usage()),
+                        self.response('r4', self.usage(30, 3, 0))]:
+                f.write(json.dumps(row) + '\n')
+        warm = self.scan(cache)
+        self.assertEqual(warm['in'] + warm['out'], 285)
+        U._LEDGER_CACHE.update(data=None, dirty=False)
+        self.assertEqual(warm, self.scan({}))
+
+    def test_legacy_first_overlap_keeps_response_identity_across_scans(self):
+        for incremental in (False, True):
+            with self.subTest(incremental=incremental):
+                U._LEDGER_CACHE.update(data=None, dirty=False)
+                path = self.write([self.snapshot(self.usage())])
+                cache = {}
+                if incremental:
+                    self.scan(cache)
+                with path.open('a') as f:
+                    for row in [self.response('r1', self.usage()),
+                                self.response('r2', self.usage(50, 5, 0))]:
+                        f.write(json.dumps(row) + '\n')
+                segment = self.write([self.response('r1', self.usage()),
+                                      self.response('r3', self.usage(70, 7, 0))], name='segment')
+                segment.write_text(segment.read_text().replace('"id": "segment"', '"id": "s"'))
+                value = self.scan(cache)
+                self.assertEqual(value['in'] + value['out'], 252)
+                segment.unlink()
+
     def test_response_only_and_dual_written_compaction(self):
         regular = self.usage()
         compact = self.usage(254769, 1249, 0)

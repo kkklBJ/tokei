@@ -488,7 +488,7 @@ struct DashboardView: View {
                     .font(.system(size: Theme.fontSize(10))).foregroundStyle(Theme.tTertiary)
             } else {
                 ForEach(projects) { p in
-                    StatBar(name: p.name, tokens: p.tokens, cost: p.cost,
+                    StatBar(name: p.name, tokens: p.tokens, cost_cny: p.cost_cny, cost: p.cost,
                             maxTokens: maxTok, tint: Theme.claude)
                 }
             }
@@ -606,8 +606,8 @@ struct DashboardView: View {
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
         let dayLabels = ["一", "二", "三", "四", "五", "六", "日"]
-        let costMap = Dictionary(uniqueKeysWithValues: daily.map { ($0.date, $0.total) })
-        let maxCost = daily.map(\.total).max() ?? 1
+        let activityMap = Dictionary(uniqueKeysWithValues: daily.map { ($0.date, Double($0.tokens)) })
+        let maxActivity = daily.map { Double($0.tokens) }.max() ?? 1
 
         return HStack(alignment: .top, spacing: 4) {
             VStack(spacing: 2) {
@@ -623,10 +623,11 @@ struct DashboardView: View {
                     ForEach(0..<7, id: \.self) { i in
                         let realD = cal.date(byAdding: .day, value: -(6 - i), to: today)!
                         let ds = fmt.string(from: realD)
-                        let cost = costMap[ds] ?? 0
+                        let activity = activityMap[ds] ?? 0
+                        let cost = daily.first { $0.date == ds }?.total ?? 0
                         HStack(spacing: 6) {
                             RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                .fill(heatColor(cost: cost, max: maxCost))
+                                .fill(heatColor(activity: activity, max: maxActivity))
                                 .frame(width: 20, height: 20)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 3, style: .continuous)
@@ -658,15 +659,15 @@ struct DashboardView: View {
         let today = Date()
         let totalDays: Int = heatRange == 1 ? 35 : 371
         let startDate = cal.date(byAdding: .day, value: -(totalDays - 1), to: today)!
-        let costMap = Dictionary(uniqueKeysWithValues: daily.map { ($0.date, $0.total) })
-        let maxCost = daily.map(\.total).max() ?? 1
+        let activityMap = Dictionary(uniqueKeysWithValues: daily.map { ($0.date, Double($0.tokens)) })
+        let maxActivity = daily.map { Double($0.tokens) }.max() ?? 1
 
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
         let dayLabels = ["一", "二", "三", "四", "五", "六", "日"]
 
         struct Cell: Identifiable {
-            var id: Int; var row: Int; var col: Int; var cost: Double; var dateStr: String
+            var id: Int; var row: Int; var col: Int; var activity: Double; var dateStr: String
         }
 
         var cells: [Cell] = []
@@ -677,7 +678,7 @@ struct DashboardView: View {
             let offset = startWeekday + i
             let row = offset % 7
             let col = offset / 7
-            cells.append(Cell(id: i, row: row, col: col, cost: costMap[ds] ?? 0, dateStr: ds))
+            cells.append(Cell(id: i, row: row, col: col, activity: activityMap[ds] ?? 0, dateStr: ds))
         }
         let cols = (cells.last?.col ?? 0) + 1
         let cellSize: CGFloat = heatRange == 1 ? 20 : 12
@@ -701,9 +702,9 @@ struct DashboardView: View {
                                 ForEach(0..<7, id: \.self) { r in
                                     let cell = cells.first { $0.row == r && $0.col == c }
                                     let ds = cell?.dateStr ?? ""
-                                    let cost = cell?.cost ?? 0
+                                    let activity = cell?.activity ?? 0
                                     RoundedRectangle(cornerRadius: radius, style: .continuous)
-                                        .fill(heatColor(cost: cost, max: maxCost))
+                                        .fill(heatColor(activity: activity, max: maxActivity))
                                         .frame(width: cellSize, height: cellSize)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: radius, style: .continuous)
@@ -743,9 +744,9 @@ struct DashboardView: View {
         Color(red: 0.98, green: 0.72, blue: 0.35),       // L4: 金黄
     ]
 
-    func heatColor(cost: Double, max: Double) -> Color {
-        if cost <= 0 { return Color.primary.opacity(0.04) }
-        let ratio = min(cost / max, 1.0)
+    func heatColor(activity: Double, max: Double) -> Color {
+        if activity <= 0 || max <= 0 { return Color.primary.opacity(0.04) }
+        let ratio = min(activity / max, 1.0)
         if ratio < 0.15 { return Self.heatColors[1] }
         if ratio < 0.35 { return Self.heatColors[2] }
         if ratio < 0.60 { return Self.heatColors[3] }
