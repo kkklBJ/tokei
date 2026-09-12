@@ -77,3 +77,64 @@ class NativeCurrencyTests(unittest.TestCase):
         finally:
             USAGE._LEDGER_CACHE.clear()
             USAGE._LEDGER_CACHE.update(saved)
+
+    def test_aggregate_legacy_currency_migration_drops_reconstructed_usd(self):
+        old = {'in': 1_000_000, 'cost': .14, '_cost_version': 3,
+               'models': {'deepseek-v4-flash': {'in': 1_000_000, 'cost': .14}}}
+        new = {'in': 1_000_000, 'cost': 0, 'cost_cny': 1, '_cost_version': 5,
+               'models': {'deepseek-v4-flash': {'in': 1_000_000, 'cost_cny': 1}}}
+        value = USAGE._ledger_merge_sources(old, {'session': new}, 'deepseek_harness')
+        self.assertEqual(value['in'], 1_000_000)
+        self.assertEqual(value['cost'], 0)
+        self.assertEqual(value['cost_cny'], 1)
+        self.assertEqual(value['models']['deepseek-v4-flash'].get('cost', 0), 0)
+
+    def test_opencode_partial_logs_cannot_replace_older_larger_ledger(self):
+        day = '2026-09-11'
+        old = {'in': 1000, 'cost': 1}
+        live = {'in': 400, 'cost': 0, 'cost_cny': .0004, '_cost_version': 2}
+        ledger = {'v': USAGE._LEDGER_VERSION, 'tools': {'opencode': {day: old}}}
+        with mock.patch.object(USAGE, '_load_ledger', return_value=ledger):
+            result = USAGE.ledger_reconcile('opencode', {day: live})
+            self.assertEqual(result[day]['in'], 1000)
+            self.assertEqual(ledger['tools']['opencode'][day]['cost'], 1)
+            complete = dict(live, **{'in': 1000, 'cost_cny': .001})
+            result = USAGE.ledger_reconcile('opencode', {day: complete})
+            self.assertEqual(result[day]['cost'], 0)
+            self.assertEqual(result[day]['cost_cny'], .001)
+
+    def test_partial_harness_migration_keeps_unattributed_history(self):
+        old = {'in': 1000, 'cost': 1}
+        new = {'in': 400, 'cost': 0, 'cost_cny': .4, '_cost_version': 5}
+        result = USAGE._ledger_merge_sources(old, {'s': new}, 'deepseek_harness')
+        self.assertEqual(result['in'], 1000)
+        self.assertEqual(result['cost'], 1)
+        self.assertEqual(result['_sources']['legacy']['in'], 600)
+        # Fully migrated orphan currency is cleaned even after an earlier save.
+        orphan = {'in': 1000, 'cost': 1, 'cost_cny': 1,
+                  '_sources': {'legacy': {'in': 0, 'cost': 1},
+                               's': {'in': 1000, 'cost_cny': 1}}}
+        full = {'in': 1000, 'cost_cny': 1}
+        repaired = USAGE._ledger_merge_sources(orphan, {'s': full}, 'deepseek_harness')
+        self.assertEqual(repaired['cost'], 0)
+        self.assertEqual(repaired['cost_cny'], 1)
+        self.assertEqual(repaired, USAGE._ledger_merge_sources(repaired, {'s': full}, 'deepseek_harness'))
+
+    def test_cny_amount_is_not_ledger_token_volume(self):
+        self.assertEqual(USAGE._ledger_day_total({'in': 400, 'cost': 1, 'cost_cny': 1000}), 400)
+
+    def test_opencode_flush_keeps_concurrently_saved_history(self):
+        import tempfile
+        import json
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'ledger.json'
+            path.write_text(json.dumps({'v': USAGE._LEDGER_VERSION, 'tools': {
+                'opencode': {'2026-09-11': {'in': 1000, 'cost': 1}}}}))
+            USAGE._LEDGER_CACHE.update(data={'v': USAGE._LEDGER_VERSION, 'tools': {
+                'opencode': {'2026-09-11': {'in': 400, 'cost_cny': .4, '_cost_version': 2}}}}, dirty=True)
+            with mock.patch.object(USAGE, '_LEDGER_FILE', str(path)):
+                USAGE.ledger_flush()
+            day = json.loads(path.read_text())['tools']['opencode']['2026-09-11']
+            self.assertEqual(day['in'], 1000)
+            self.assertEqual(day['cost'], 1)
