@@ -60,6 +60,31 @@ class TokenAccountingTests(unittest.TestCase):
     def scan(self, cache):
         return U.scan_codex(U.range_bounds(), cache)['ranges']['all']
 
+    def test_resumed_session_segments_with_same_thread_are_both_counted(self):
+        self.write([self.response('old-1', self.usage()),
+                    self.response('old-2', self.usage(50, 5, 0))])
+        segment = self.write([self.response('new-1', self.usage(70, 7, 0))], name='segment')
+        text = segment.read_text().replace('"id": "segment"', '"id": "s"')
+        segment.write_text(text)
+        result = self.scan({})
+        self.assertEqual(result['in'] + result['out'], 252)
+
+    def test_resumed_segments_overlap_and_incremental_append_do_not_double_count(self):
+        old = self.write([self.response('r1', self.usage()),
+                          self.response('r2', self.usage(50, 5, 0))])
+        segment = self.write([self.response('r2', self.usage(50, 5, 0)),
+                              self.response('r3', self.usage(70, 7, 0))], name='segment')
+        segment.write_text(segment.read_text().replace('"id": "segment"', '"id": "s"'))
+        cache = {}
+        self.assertEqual(self.scan(cache)['in'] + self.scan(cache)['out'], 252)
+        with segment.open('a') as f:
+            f.write(json.dumps(self.response('r4', self.usage(30, 3, 0))) + '\n')
+        warm = self.scan(cache)
+        self.assertEqual(warm['in'] + warm['out'], 285)
+        U._LEDGER_CACHE.update(data=None, dirty=False)
+        cold = self.scan({})
+        self.assertEqual(warm, cold)
+
     def test_response_only_and_dual_written_compaction(self):
         regular = self.usage()
         compact = self.usage(254769, 1249, 0)

@@ -442,3 +442,7 @@ session_total = input + output + cache_read + cache_write
 ```
 
 卡片内各区间的总 token 同理,按区间累加各字段后求和。
+
+### Codex 续跑日志分段
+
+同一 thread ID 可对应多个运行时日志分段，不能按记录数只选最大的文件。对含 response ID 的分段保留未覆盖响应，再在同任务分段间按 response ID 去重；冷扫描、增量追加和归档副本使用一致口径。旧日志无响应身份时保留既有副本选择策略。采集器 revision 5 / Codex parser 5 触发旧缓存重建。
