@@ -202,34 +202,6 @@ struct GeminiRanges: Codable {
     var year: GeminiRange
     var all: GeminiRange?
 
-    /// A zero-activity selected range should not hide a recent local session.
-    /// Return the nearest useful range together with its real label so the UI
-    /// never presents yesterday/week data as today's data.
-    func displayRange(for preferred: RangeKey) -> (range: GeminiRange, key: RangeKey) {
-        let order: [RangeKey]
-        switch preferred {
-        case .today:
-            order = [.today, .yesterday, .week, .month, .year, .all]
-        case .yesterday:
-            order = [.yesterday, .today, .week, .month, .year, .all]
-        case .week:
-            order = [.week, .today, .yesterday, .month, .year, .all]
-        case .lastWeek:
-            order = [.lastWeek, .week, .month, .year, .all, .today, .yesterday]
-        case .month:
-            order = [.month, .year, .all, .week, .today, .yesterday]
-        case .year:
-            order = [.year, .all, .month, .week, .today, .yesterday]
-        case .all:
-            order = [.all, .year, .month, .week, .today, .yesterday]
-        }
-        for key in order {
-            let candidate = get(key)
-            if candidate.hasUsage { return (candidate, key) }
-        }
-        return (get(preferred), preferred)
-    }
-
     func get(_ k: RangeKey) -> GeminiRange {
         switch k {
         case .today: return today; case .yesterday: return yesterday
@@ -371,6 +343,13 @@ struct GrokStat: Codable {
 struct QoderRange: Codable {
     var `in`: Int = 0
     var out: Int = 0
+    var cr: Int = 0
+    var cw: Int = 0
+    var credits: Double = 0
+    var usage_calls: Int = 0
+    var usage_available: Bool = false
+    var hit: Double = 0
+    var models: [TokenModelStat] = []
     var sessions: Int = 0
     var calls: Int = 0
     var sub_agents: Int = 0
@@ -380,15 +359,28 @@ struct QoderRange: Codable {
     var tools: Int = 0
     var est: Int = 0
 
+    var totalTokens: Int { self.in + out + cr + cw }
+
     enum CodingKeys: String, CodingKey {
-        case `in`, out, sessions, calls, sub_agents, turns, duration, ctx, tools, est
+        case `in`, out, cr, cw, credits, usage_calls, usage_available, hit, models
+        case sessions, calls, sub_agents, turns, duration, ctx, tools, est
     }
 
-    init(`in` input: Int = 0, out: Int = 0, sessions: Int = 0, calls: Int = 0,
-         sub_agents: Int = 0, turns: Int = 0, duration: Int = 0, ctx: Double = 0,
+    init(`in` input: Int = 0, out: Int = 0, cr: Int = 0, cw: Int = 0,
+         credits: Double = 0, usage_calls: Int = 0, usage_available: Bool = false,
+         hit: Double = 0, models: [TokenModelStat] = [],
+         sessions: Int = 0, calls: Int = 0, sub_agents: Int = 0,
+         turns: Int = 0, duration: Int = 0, ctx: Double = 0,
          tools: Int = 0, est: Int = 0) {
         self.in = input
         self.out = out
+        self.cr = cr
+        self.cw = cw
+        self.credits = credits
+        self.usage_calls = usage_calls
+        self.usage_available = usage_available
+        self.hit = hit
+        self.models = models
         self.sessions = sessions
         self.calls = calls
         self.sub_agents = sub_agents
@@ -403,6 +395,13 @@ struct QoderRange: Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.in = try c.decodeIfPresent(Int.self, forKey: .in) ?? 0
         self.out = try c.decodeIfPresent(Int.self, forKey: .out) ?? 0
+        self.cr = try c.decodeIfPresent(Int.self, forKey: .cr) ?? 0
+        self.cw = try c.decodeIfPresent(Int.self, forKey: .cw) ?? 0
+        self.credits = try c.decodeIfPresent(Double.self, forKey: .credits) ?? 0
+        self.usage_calls = try c.decodeIfPresent(Int.self, forKey: .usage_calls) ?? 0
+        self.usage_available = try c.decodeIfPresent(Bool.self, forKey: .usage_available) ?? false
+        self.hit = try c.decodeIfPresent(Double.self, forKey: .hit) ?? 0
+        self.models = try c.decodeIfPresent([TokenModelStat].self, forKey: .models) ?? []
         self.sessions = try c.decodeIfPresent(Int.self, forKey: .sessions) ?? 0
         self.calls = try c.decodeIfPresent(Int.self, forKey: .calls) ?? 0
         self.sub_agents = try c.decodeIfPresent(Int.self, forKey: .sub_agents) ?? 0
@@ -938,7 +937,6 @@ struct Usage: Codable {
         grok = try c.decode(GrokStat.self, forKey: .grok)
         grokBot = try c.decodeIfPresent(GrokBotStat.self, forKey: .grokBot) ?? .empty
         qoderwork = (try? c.decodeIfPresent(QoderStat.self, forKey: .qoderwork))
-            ?? (try? c.decodeIfPresent(QoderStat.self, forKey: .qoder))
             ?? QoderStat(ranges: .empty, model: nil)
         qoder = (try? c.decodeIfPresent(QoderIdeStat.self, forKey: .qoder))
             ?? QoderIdeStat(ranges: .empty, model: nil)

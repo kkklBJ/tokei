@@ -15,6 +15,7 @@ struct PanelView: View {
     @State private var zaiModelsOpen = false
     @State private var grokModelsOpen = false
     @State private var grokBotModelsOpen = false
+    @State private var qoderCliModelsOpen = false
     @State private var hermesModelsOpen = false
     @State private var zcodeModelsOpen = false
     @State private var mimocodeModelsOpen = false
@@ -346,7 +347,7 @@ struct PanelView: View {
 
     private func toolCards(for u: Usage) -> [ToolCardItem] {
         let cr = u.claude.ranges.get(sel), xr = u.codex.ranges.get(sel)
-        let geminiDisplay = u.gemini.ranges.displayRange(for: sel)
+        let geminiRange = u.gemini.ranges.get(sel)
         let kr = u.grok.ranges.get(sel)
         let grokBotDisplay: (key: RangeKey, range: QoderRange, usage: TokenUsageRange) = {
             let selected = u.grokBot.ranges.get(sel)
@@ -399,15 +400,9 @@ struct PanelView: View {
                              (u.codex.reset_cards?.count ?? 0) > 0,
                          tint: Theme.codex, content: AnyView(codexBlock(u.codex, xr))),
             ToolCardItem(id: "gemini", name: "Gemini", visible: showGemini,
-                         active: geminiDisplay.range.hasUsage || u.antigravity.available,
+                         active: geminiRange.hasUsage,
                          tint: Theme.gemini,
-                         presentation: !geminiDisplay.range.hasUsage && u.antigravity.available
-                             ? .compactStatus : .standard,
-                         content: AnyView(geminiBlock(
-                            geminiDisplay.range,
-                            quota: u.antigravity,
-                            displayedRange: geminiDisplay.key
-                         ))),
+                         content: AnyView(geminiBlock(geminiRange, quota: u.antigravity))),
             ToolCardItem(id: "cursor", name: "Cursor", visible: showCursor,
                          active: u.cursor.available || cursorUsage.totalTokens > 0,
                          tint: Theme.cursor,
@@ -458,11 +453,14 @@ struct PanelView: View {
                          content: AnyView(grokBotBlock(
                             u.grokBot, grokBotDisplay.range, grokBotDisplay.usage,
                             displayedRange: grokBotDisplay.key))),
-            ToolCardItem(id: "qoder", name: "Qoder Desktop", visible: showQoder, active: qr.calls > 0,
+            ToolCardItem(id: "qoder", name: "Qoder Desktop", visible: showQoder,
+                         active: qr.calls > 0 || qr.in + qr.cached + qr.out > 0,
                          tint: Theme.qoder, content: AnyView(qoderIdeBlock(u.qoder, qr))),
-            ToolCardItem(id: "qoderwork", name: "QoderWork", visible: showQoderWork, active: qwr.calls > 0,
+            ToolCardItem(id: "qoderwork", name: "QoderWork", visible: showQoderWork,
+                         active: qwr.calls > 0 || qwr.totalTokens > 0,
                          tint: Theme.qoderwork, content: AnyView(qoderworkBlock(u.qoderwork, qwr))),
-            ToolCardItem(id: "qodercli", name: "Qoder CLI", visible: showQoderCli, active: qclir.calls > 0,
+            ToolCardItem(id: "qodercli", name: "Qoder CLI", visible: showQoderCli,
+                         active: qclir.calls > 0 || qclir.totalTokens > 0,
                          tint: Theme.qodercli, content: AnyView(qodercliBlock(u.qodercli, qclir))),
             ToolCardItem(id: "hermes", name: "Hermes", visible: showHermes, active: hr.sessions > 0,
                          tint: Theme.hermes, content: AnyView(hermesBlock(hr, modelsOpen: $hermesModelsOpen))),
@@ -762,19 +760,13 @@ struct PanelView: View {
     @ViewBuilder
     func geminiBlock(
         _ r: GeminiRange,
-        quota: ProviderQuotaStat,
-        displayedRange: RangeKey? = nil
+        quota: ProviderQuotaStat
     ) -> some View {
-        let usageLabel = (displayedRange ?? sel).label
+        let usageLabel = sel.label
         VStack(alignment: .leading, spacing: 11) {
-            cardHead("Gemini / Antigravity", tint: Theme.gemini, sessions: r.sessions,
-                     toolID: r.hasUsage ? "gemini" : nil)
             if r.hasUsage {
-                if let displayedRange, displayedRange != sel {
-                    Text("\(sel.label)暂无用量，显示\(displayedRange.label)最近用量")
-                        .font(.system(size: Theme.fontSize(9.5)))
-                        .foregroundStyle(Theme.tTertiary)
-                }
+                cardHead("Gemini / Antigravity", tint: Theme.gemini, sessions: r.sessions,
+                         toolID: "gemini")
                 CostHeadline(value: Fmt.human(r.totalTokens), caption: "\(usageLabel) 总量", tint: Theme.gemini)
                 metricGrid([.init("dollarsign.circle", "≈成本", String(format: "$%.2f", r.cost))],
                     hit: r.hit, extra: {
@@ -797,12 +789,10 @@ struct PanelView: View {
                     modelDisclosure(geminiRows, open: $geminiModelsOpen, tint: Theme.gemini,
                                     periodLabel: usageLabel)
                 }
-            } else {
-                quota.available ? AnyView(usageEmptyHint) : AnyView(emptyHint)
-            }
-            if quota.available {
-                if r.hasUsage { thinDivider }
-                providerQuotaContent(quota, tint: Theme.gemini)
+                if quota.available {
+                    thinDivider
+                    providerQuotaContent(quota, tint: Theme.gemini)
+                }
             }
         }
     }
@@ -1458,8 +1448,8 @@ struct PanelView: View {
     func qoderIdeBlock(_ q: QoderIdeStat, _ r: QoderIdeRange) -> some View {
         VStack(alignment: .leading, spacing: 11) {
             cardHeadPlain("Qoder Desktop", tint: Theme.qoder, toolID: "qoder")
-            if r.calls > 0 {
-                let total = r.in + r.cached + r.out
+            let total = r.in + r.cached + r.out
+            if r.calls > 0 || total > 0 {
                 if total > 0 {
                     CostHeadline(value: Fmt.human(total), caption: "\(sel.label) 总量", tint: Theme.qoder)
                 }
@@ -1505,13 +1495,18 @@ struct PanelView: View {
     func qoderworkBlock(_ q: QoderStat, _ r: QoderRange) -> some View {
         VStack(alignment: .leading, spacing: 11) {
             cardHeadPlain("QoderWork", tint: Theme.qoderwork, toolID: "qoderwork")
-            if r.calls > 0 {
+            if r.calls > 0 || r.totalTokens > 0 {
+                if r.totalTokens > 0 {
+                    CostHeadline(value: Fmt.human(r.totalTokens), caption: "\(sel.label) 总量", tint: Theme.qoderwork)
+                }
                 metricGrid({
                     var items: [Metric] = [
                         .init("terminal", "任务", "\(r.calls)"),
                         .init("person.2", "会话", "\(r.sessions)"),
                         .init("clock", "耗时", Fmt.duration(r.duration)),
                     ]
+                    if r.in > 0 { items.append(.init("arrow.down", "输入", Fmt.human(r.in))) }
+                    if r.out > 0 { items.append(.init("arrow.up", "输出", Fmt.human(r.out))) }
                     if r.sub_agents > 0 {
                         items.append(.init("point.3.connected.trianglepath.dotted", "子agent", "\(r.sub_agents)"))
                     }
@@ -1532,19 +1527,30 @@ struct PanelView: View {
         }
     }
 
-    // MARK: - Qoder CLI 卡片(仅活跃维度:qodercli 本地不落 token 数)
+    // MARK: - Qoder CLI 卡片
     @ViewBuilder
     func qodercliBlock(_ q: QoderStat, _ r: QoderRange) -> some View {
         VStack(alignment: .leading, spacing: 11) {
             cardHeadPlain("Qoder CLI", tint: Theme.qodercli, toolID: "qodercli")
-            if r.calls > 0 {
-                metricGrid({
+            if r.calls > 0 || r.totalTokens > 0 {
+                if r.usage_available && r.totalTokens > 0 {
+                    CostHeadline(value: Fmt.human(r.totalTokens), caption: "\(sel.label) 总量", tint: Theme.qodercli)
+                }
+                metricGrid(r.credits > 0 ? [
+                    .init("circle.hexagongrid.fill", "Credits", Fmt.credits(r.credits)),
+                ] : [], hit: r.hit, extra: {
                     var items: [Metric] = [
                         .init("terminal", "模型调用", "\(r.calls)"),
                         .init("person.2", "会话", "\(r.sessions)"),
                         .init("bubble.left.and.bubble.right", "消息数", Fmt.human(r.turns)),
                         .init("clock", "活跃", Fmt.duration(r.duration)),
                     ]
+                    if r.usage_available {
+                        items.append(.init("arrow.down", "输入", Fmt.human(r.in)))
+                        items.append(.init("arrow.up", "输出", Fmt.human(r.out)))
+                        if r.cr > 0 { items.append(.init("bolt.fill", "缓存读", Fmt.human(r.cr))) }
+                        if r.cw > 0 { items.append(.init("square.stack.3d.up.fill", "缓存写", Fmt.human(r.cw))) }
+                    }
                     if r.tools > 0 {
                         items.append(.init("wrench.and.screwdriver", "工具调用", Fmt.human(r.tools)))
                     }
@@ -1553,7 +1559,9 @@ struct PanelView: View {
                     }
                     return items
                 }(), tint: Theme.qodercli)
-                if let model = q.model, !model.isEmpty {
+                if !r.models.isEmpty {
+                    tokenModelDisclosure(r.models, open: $qoderCliModelsOpen, tint: Theme.qodercli)
+                } else if let model = q.model, !model.isEmpty {
                     modelBadge(model, tint: Theme.qodercli)
                 }
             } else {
@@ -3619,7 +3627,7 @@ struct PanelView: View {
         if let data = result.stdout.data(using: .utf8),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             let tools = ["claude", "codex", "gemini", "antigravity", "cursor", "zed",
-                         "sub2api", "zai", "grok", "grok_bot", "qoder", "qoderwork", "hermes",
+                         "sub2api", "zai", "grok", "grok_bot", "qoder", "qoderwork", "qodercli", "hermes",
                          "zcode", "mimocode", "openclaw", "pi", "workbuddy", "workbuddy_ai",
                          "deepseek_harness",
                          "opencode", "qwencode", "qwenwork", "kimicode", "prime_agent"]

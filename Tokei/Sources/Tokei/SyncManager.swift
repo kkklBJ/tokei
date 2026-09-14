@@ -441,7 +441,11 @@ final class SyncManager {
                 u.grokBot.quota = peer.usage.grokBot.quota
             }
             mergeRanges(&u.qoderwork.ranges, peer.usage.qoderwork.ranges, pairs)
+            u.qoderwork.model = mergeModelName(u.qoderwork.model, peer.usage.qoderwork.model)
             mergeRanges(&u.qoder.ranges, peer.usage.qoder.ranges, pairs)
+            u.qoder.model = mergeModelName(u.qoder.model, peer.usage.qoder.model)
+            mergeRanges(&u.qodercli.ranges, peer.usage.qodercli.ranges, pairs)
+            u.qodercli.model = mergeModelName(u.qodercli.model, peer.usage.qodercli.model)
             mergeRanges(&u.hermes.ranges, peer.usage.hermes.ranges, pairs)
             mergeRanges(&u.zcode.ranges, peer.usage.zcode.ranges, pairs)
             mergeRanges(&u.mimocode.ranges, peer.usage.mimocode.ranges, pairs)
@@ -600,11 +604,16 @@ final class SyncManager {
         for pair in pairs {
             var d = dst.get(pair.dst), s = src.get(pair.src)
             let originalSessions = d.sessions
-            d.in += s.in; d.out += s.out
+            d.in += s.in; d.out += s.out; d.cr += s.cr; d.cw += s.cw
+            d.credits += s.credits; d.usage_calls += s.usage_calls
+            d.usage_available = d.usage_available || s.usage_available
             d.sessions += s.sessions
             d.calls += s.calls; d.sub_agents += s.sub_agents
             d.turns += s.turns; d.duration += s.duration
             d.tools += s.tools; d.est += s.est
+            let inputTotal = d.in + d.cr + d.cw
+            d.hit = inputTotal > 0 ? Double(d.cr) / Double(inputTotal) * 100 : 0
+            mergeTokenModels(&d.models, s.models)
             d.ctx = weightedAverage(d.ctx, originalSessions, s.ctx, s.sessions)
             dst.set(pair.dst, d)
         }

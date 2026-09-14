@@ -29,6 +29,16 @@ class ProviderQuotaModelTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("provider quota model checks passed", result.stdout)
 
+    def test_gemini_card_requires_selected_range_usage(self):
+        source = (ROOT / "Tokei/Sources/Tokei/PanelView.swift").read_text()
+        start = source.index('ToolCardItem(id: "gemini"')
+        end = source.index('ToolCardItem(id: "cursor"', start)
+        gemini_card = source[start:end]
+
+        self.assertIn("active: geminiRange.hasUsage", gemini_card)
+        self.assertNotIn("antigravity.available", gemini_card)
+        self.assertNotIn("displayRange", source)
+
     def test_sync_manager_provider_config_typechecks(self):
         result = subprocess.run(
             [

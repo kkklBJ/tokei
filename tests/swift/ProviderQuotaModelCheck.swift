@@ -96,10 +96,12 @@ struct ProviderQuotaModelCheck {
           "year": {"hit": 75, "in": 100, "out": 20, "cached": 30, "thoughts": 10, "cost": 1.25, "models": [], "sessions": 1}
         }
         """.utf8))
-        let geminiDisplay = geminiRanges.displayRange(for: .today)
-        try expect(geminiDisplay.key == .yesterday, "Gemini should expose the nearest non-empty range")
-        try expect(geminiDisplay.range.totalTokens == 160, "Gemini display total")
-        try expect(geminiDisplay.range.hasUsage, "Gemini display usage flag")
+        try expect(!geminiRanges.get(.today).hasUsage,
+                   "Gemini card should stay hidden when the selected range is empty")
+        try expect(geminiRanges.get(.yesterday).hasUsage,
+                   "Gemini card should appear when the selected range has usage")
+        try expect(geminiRanges.get(.yesterday).totalTokens == 160,
+                   "Gemini selected-range total")
 
         print("provider quota model checks passed")
     }
