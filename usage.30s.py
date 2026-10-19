@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# TOKEI_COLLECTOR_REVISION=6
+# TOKEI_COLLECTOR_REVISION=7
 # <bitbar.title>AI Usage Bar</bitbar.title>
 # <bitbar.version>v0.1</bitbar.version>
 # <bitbar.author>local</bitbar.author>
@@ -211,6 +211,7 @@ ANTIGRAVITY_SCAN_CACHE = _writable_path("antigravity_scan_cache.json")
 # 内置兜底:pricing.json 缺失时仍能离线工作。常用直连模型按官方 API 价，
 # 其余模型由 pricing.json 的 OpenRouter 目录补齐。
 _DEFAULT_PRICES = {
+    "openai/gpt-6.1-sol":            {"in": 2.0,   "out": 10.0, "cache_read": 0.1,    "cache_write": 2.5},
     "anthropic/claude-fable-5.1":   {"in": 10.0,  "out": 50.0, "cache_read": 0.25,   "cache_write": 12.5, "write1h": 20.0},
     "anthropic/claude-sonnet-5":    {"in": 2.0,   "out": 10.0, "cache_read": 0.2,    "cache_write": 2.5},
     "anthropic/claude-opus-4.8":     {"in": 5.0,   "out": 25.0, "cache_read": 0.5,    "cache_write": 6.25},
@@ -311,6 +312,11 @@ _PRICING_DB = _load_json(PRICING_FILE, {}).get("models", {})
 # 已安装版本会保留用户自己的 pricing_overrides.json。关键官方修正也随脚本内置，
 # 这样升级后立即生效；用户仍可覆盖单价，已确认的官方别名保持固定映射。
 _BUILTIN_OVERRIDE_MODELS = {
+    # OpenAI Standard short-context rates (USD / 1M tokens):
+    # https://developers.openai.com/api/docs/pricing
+    "openai/gpt-6.1-sol": {
+        "in": 2.0, "out": 10.0, "cache_read": 0.1, "cache_write": 2.5,
+    },
     "openai/gpt-5.6-sol": {
         "in": 4.0, "out": 20.0, "cache_read": 0.4, "cache_write": 5.0,
     },
@@ -726,7 +732,7 @@ _SCAN_CACHE_FILE = _DEFAULT_SCAN_CACHE_FILE
 _SCAN_CACHE_VERSION = 21
 _SCAN_CACHE_MIGRATABLE_VERSION = 19
 _CODEX_EVENT_CACHE_SUFFIX = ".codex-events"
-_CODEX_PARSER_VERSION = 6
+_CODEX_PARSER_VERSION = 7
 _CODEX_SCAN_CHECKPOINT_INTERVAL = 5.0
 _GEMINI_DAYS_CACHE_KEY = "_gemini_dashboard_days"
 _GROK_DAYS_CACHE_KEY = "_grok_dashboard_days"
@@ -2859,8 +2865,9 @@ def _codex_probe_record_header(data):
 
 
 def _iter_codex_usage_records(path, chunk_size=64 * 1024, header_limit=1024,
-                              model_limit=4 * 1024, start_offset=0, end_offset=None):
+                              model_limit=64 * 1024, start_offset=0, end_offset=None):
     """Yield model changes and token records without buffering unrelated large JSONL lines."""
+    # Desktop turn_context records can place model after several KB of environment data.
     prefix = bytearray()
     candidate = None
     kind = None

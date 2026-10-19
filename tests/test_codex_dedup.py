@@ -1057,6 +1057,18 @@ class CodexTokenLineReaderTests(unittest.TestCase):
 
         self.assertEqual(records, [("model", "gpt-5.4"), ("token", token)])
 
+    def test_extracts_model_after_long_environment_context(self):
+        context = json.dumps({
+            "timestamp": "2026-10-07T06:00:00Z",
+            "type": "turn_context",
+            "payload": {"environment": "x" * 5000, "model": "gpt-6.1-sol"},
+        }).encode() + b"\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rollout-late-model.jsonl"
+            path.write_bytes(context)
+            records = list(USAGE._iter_codex_usage_records(path, chunk_size=1024))
+        self.assertEqual(records, [("model", "gpt-6.1-sol")])
+
 
 if __name__ == "__main__":
     unittest.main()

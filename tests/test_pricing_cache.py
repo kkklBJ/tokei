@@ -229,6 +229,21 @@ class PricingCacheTests(unittest.TestCase):
             self.assertEqual(shipped["aliases"][alias], model)
 
     def test_current_official_and_snapshot_prices_resolve_exactly(self):
+        for model in ("gpt-6.1-sol", "openai/gpt-6.1-sol", "GPT-6.1 Sol"):
+            with self.subTest(model=model):
+                self.assertEqual(USAGE._resolve_id(model), "openai/gpt-6.1-sol")
+                self.assertEqual(USAGE._raw_price(model), {
+                    "in": 2.0, "out": 10.0,
+                    "cache_read": 0.1, "cache_write": 2.5,
+                })
+                self.assertAlmostEqual(
+                    USAGE._codex_estimated_cost(model, 100_000, 50_000, 20_000),
+                    0.305,
+                )
+                self.assertAlmostEqual(
+                    USAGE._codex_estimated_cost(model, 300_000, 50_000, 20_000),
+                    1.31,
+                )
         self.assertEqual(USAGE._resolve_id("gpt-5.6"), "openai/gpt-5.6-sol")
         self.assertEqual(USAGE._raw_price("gpt-5.6"), {
             "in": 4.0,
