@@ -11,6 +11,7 @@ PANEL_FILES = [
     "DashboardView.swift",
     "ProjectTrailView.swift",
     "QuotaHistoryView.swift",
+    "DailyTokenHistoryView.swift",
     "Design.swift",
     "WrappedView.swift",
 ]

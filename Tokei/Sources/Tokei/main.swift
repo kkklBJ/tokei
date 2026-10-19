@@ -114,6 +114,9 @@ final class Store: ObservableObject {
             }
             self.allDevicesUsage = allDevices
             self.applyDisplayMode(updateStatusTitle: false)
+            if self.popoverVisible {
+                QuotaDetailRepository.shared.load()
+            }
             let f = DateFormatter(); f.dateFormat = "HH:mm:ss"
             self.lastUpdated = "更新 " + f.string(from: Date())
             (NSApp.delegate as? AppDelegate)?.updateStatusTitle()

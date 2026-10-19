@@ -61,6 +61,47 @@ class MergeQuotaAnchorsTests(unittest.TestCase):
 
 
 class AnchorCyclesTests(unittest.TestCase):
+    def test_stale_later_reset_cannot_pin_current_cycle_below_projection_threshold(self):
+        # 真实故障:同一周的旧 2% 读数比最新 9% 的 reset 晚 185 秒,
+        # 超出 jitter,但不能因此一直占着当前卡片。
+        reset = 1792897215
+        now = 1792390520
+        anchors = {"codex": [
+            _anchor(reset - WEEK, 38.0, seen=reset - WEEK - 60),
+            _anchor(reset, 9.0, seen=now),
+            _anchor(reset + 185, 2.0, seen=1792321741),
+        ]}
+
+        cycles = USAGE._quota_anchor_cycles(anchors, "codex", WEEK, 8, now)
+
+        self.assertEqual(cycles[0], (reset - WEEK, reset, 9.0, True))
+        self.assertEqual(cycles[1], (reset - 2 * WEEK, reset - WEEK, 38.0, False))
+        self.assertEqual(len(cycles), 2)
+        # 只纠正展示选择,不删除保存的观测。
+        self.assertEqual(len(anchors["codex"]), 3)
+
+    def test_fresh_later_reset_preserves_a_real_short_cycle(self):
+        reset = 6 * WEEK
+        now = reset - WEEK + 3600
+        for used in (0.0, 2.0):
+            with self.subTest(used=used):
+                anchors = {"codex": [_anchor(reset, 9.0, seen=now - 60)]}
+                USAGE._record_quota_anchor(anchors, "codex", reset + 185, used, now)
+
+                cycles = USAGE._quota_anchor_cycles(anchors, "codex", WEEK, 8, now)
+
+                self.assertEqual(cycles[0], (reset + 185 - WEEK, reset + 185, used, True))
+                self.assertEqual(cycles[1], (reset - WEEK, reset + 185 - WEEK, 9.0, False))
+
+    def test_completed_cycles_are_not_discarded_by_observation_recency(self):
+        anchors = {"codex": [
+            _anchor(5 * WEEK, 40.0, seen=7 * WEEK),
+            _anchor(6 * WEEK, 20.0, seen=6 * WEEK),
+        ]}
+        cycles = USAGE._quota_anchor_cycles(anchors, "codex", WEEK, 8, 7 * WEEK)
+        self.assertEqual(len(cycles), 2)
+        self.assertFalse(any(c[3] for c in cycles))
+
     def test_latest_window_still_running_is_marked_current(self):
         anchors = {"codex": [_anchor(5 * WEEK, 40.0), _anchor(6 * WEEK, 20.0)]}
         cycles = USAGE._quota_anchor_cycles(anchors, "codex", WEEK, 8, 6 * WEEK - 1)
@@ -160,6 +201,25 @@ class AnchorCyclesTests(unittest.TestCase):
 
 
 class CycleSpecsTests(unittest.TestCase):
+    def test_stale_peer_reading_keeps_its_original_observation_time(self):
+        reset = 1792897215
+        now = 1792390520
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(USAGE, "_QUOTA_ANCHOR_FILE", os.path.join(tmp, "cycles.json")):
+                _, _, anchors = USAGE._quota_cycle_specs(
+                    {"codex": {"pw": 9.0, "rw": reset, "q_updated": now - 10}},
+                    [
+                        (USAGE._QUOTA_SELF_DEVICE, {}, None, {}),
+                        ("peer", {}, {"codex": {
+                            "pw": 2.0, "rw": reset + 185, "q_updated": now - 3600,
+                        }}, {}),
+                    ], [], now)
+
+        self.assertEqual(anchors["codex"][0]["last_seen"], now - 10)
+        self.assertEqual(anchors["codex"][1]["last_seen"], now - 3600)
+        cycles = USAGE._quota_anchor_cycles(anchors, "codex", WEEK, 8, now)
+        self.assertEqual(cycles[0][2], 9.0)
+
     def _run(self, payload, peer_anchors, now, existing=None):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "quota_cycles.json")

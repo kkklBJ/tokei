@@ -532,7 +532,7 @@ struct DashboardView: View {
                 Text(d.date).font(.system(size: Theme.fontSize(13), weight: .bold, design: .monospaced))
                     .foregroundStyle(Theme.tPrimary)
                 Spacer()
-                Text(nativeMoney(d.total, d.cost_cny))
+                Text(Fmt.human(d.tokens) + " tokens")
                     .font(.system(size: Theme.fontSize(15), weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                 Button { selectedCell = nil } label: {
@@ -624,7 +624,6 @@ struct DashboardView: View {
                         let realD = cal.date(byAdding: .day, value: -(6 - i), to: today)!
                         let ds = fmt.string(from: realD)
                         let activity = activityMap[ds] ?? 0
-                        let cost = daily.first { $0.date == ds }?.total ?? 0
                         HStack(spacing: 6) {
                             RoundedRectangle(cornerRadius: 3, style: .continuous)
                                 .fill(heatColor(activity: activity, max: maxActivity))
@@ -642,11 +641,9 @@ struct DashboardView: View {
                                 .font(.system(size: Theme.fontSize(9), design: .monospaced))
                                 .foregroundStyle(Theme.tTertiary)
                                 .frame(width: 38, alignment: .leading)
-                            if cost > 0 || (daily.first { $0.date == ds }?.cost_cny ?? 0) > 0 {
-                                Text(nativeMoney(cost, daily.first { $0.date == ds }?.cost_cny))
-                                    .font(.system(size: Theme.fontSize(10), weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(Theme.tSecondary)
-                            }
+                            Text(Fmt.human(daily.first { $0.date == ds }?.tokens ?? 0) + " tokens")
+                                .font(.system(size: Theme.fontSize(10), weight: .semibold, design: .monospaced))
+                                .foregroundStyle(Theme.tSecondary)
                         }
                     }
                 }

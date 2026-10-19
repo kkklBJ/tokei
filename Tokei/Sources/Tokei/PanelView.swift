@@ -191,6 +191,7 @@ struct PanelView: View {
         VStack(alignment: .leading, spacing: 13) {
             header
             if mode == .quotaHistory {
+                DailyTokenHistoryView(store: store)
                 QuotaHistoryView(history: store.quotaHistory)
             } else if mode == .dashboard {
                 DashboardView(store: store)

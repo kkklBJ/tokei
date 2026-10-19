@@ -99,6 +99,11 @@ struct QuotaHistoryStoreCheck {
         try expect(reloaded.points.count == 1, "points outside retention should be pruned")
 
         try checkProjection()
+        let codexOnly = QuotaHistoryPoint(timestamp: 100, codexWeekRemaining: 91)
+        try expect(QuotaHistoryProjection(points: [codexOnly], tool: .claude).hoverSamples.isEmpty,
+                   "Codex-only samples must not count as Claude quota readings")
+        try expect(QuotaHistoryProjection(points: [codexOnly], tool: .codex).hoverSamples.count == 1,
+                   "Codex quota samples must remain visible")
         print("quota history store checks passed")
     }
 

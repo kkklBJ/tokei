@@ -10,8 +10,6 @@ private enum QuotaHistorySpan: Int, CaseIterable, Identifiable {
     case sixHours = 6
     case day = 24
     case week = 168
-    case month = 720
-    case year = 8760
 
     var id: Int { rawValue }
     var label: String {
@@ -20,8 +18,6 @@ private enum QuotaHistorySpan: Int, CaseIterable, Identifiable {
         case .sixHours: return "6h"
         case .day: return "24h"
         case .week: return "1周"
-        case .month: return "1月"
-        case .year: return "1年"
         }
     }
     var axisStride: Int {
@@ -30,14 +26,10 @@ private enum QuotaHistorySpan: Int, CaseIterable, Identifiable {
         case .sixHours: return 2
         case .day: return 6
         case .week: return 24
-        default: return 24
         }
     }
     /// 跨度超过一天时,每个刻度都写 HH:mm 会重复出现 00:00,改标日期。
     var axisShowsDate: Bool { rawValue >= 168 }
-    /// 额度% 快照只留 7 天,再长的跨度没有曲线可画,改用账本里的每日消耗。
-    var showsDailyTokens: Bool { self == .month || self == .year }
-    var days: Int { max(rawValue / 24, 1) }
 }
 
 private struct QuotaHistoryFrame {
@@ -51,7 +43,7 @@ struct QuotaHistoryView: View {
 
     @ObservedObject var history: QuotaHistoryStore
     @ObservedObject private var detail = QuotaDetailRepository.shared
-    @State private var tool: QuotaHistoryTool = .claude
+    @AppStorage("quotaHistoryTool") private var tool: QuotaHistoryTool = .claude
     @State private var span: QuotaHistorySpan = .day
     @State private var cycleTool: String?
     @State private var expandedCycleHistory: Set<String> = []
@@ -81,11 +73,7 @@ struct QuotaHistoryView: View {
         VStack(alignment: .leading, spacing: 13) {
             cycleSection
             controls
-            if span.showsDailyTokens {
-                dailyTokensSection
-            } else {
-                quotaCurveSection
-            }
+            quotaCurveSection
             footnote
         }
         .onAppear { detail.load() }
@@ -109,9 +97,7 @@ struct QuotaHistoryView: View {
     }
 
     private var footnote: some View {
-        Text(span.showsDailyTokens
-             ? "长跨度画的是每日真实 token 消耗，已合并所有设备的账本（CLI 清理旧日志也不缩水）；额度百分比快照只保留 7 天，画不了这么长。"
-             : "额度曲线来自本机定时快照；模型标记来自同一分钟内本地会话 token 增量，仅表示相关活动，不等同于官方逐模型扣费归因。")
+        Text("额度曲线来自本机定时快照；模型标记来自同一分钟内本地会话 token 增量，仅表示相关活动，不等同于官方逐模型扣费归因。")
             .font(.system(size: Theme.fontSize(9.5)))
             .foregroundStyle(Theme.tTertiary)
             .fixedSize(horizontal: false, vertical: true)
@@ -402,92 +388,25 @@ struct QuotaHistoryView: View {
         .frame(height: 58)
     }
 
-    // MARK: - 长跨度每日消耗
-
-    private var dailyTokensSection: some View {
-        let points = recentDailyPoints
-        let claude = points.reduce(0) { $0 + $1.c }
-        let codex = points.reduce(0) { $0 + $1.x }
-        let grok = points.reduce(0) { $0 + $1.g }
-        return Card(tint: Theme.codex) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 12) {
-                    dailyStat("Claude Code", claude, Theme.claude)
-                    dailyStat("Codex", codex, Theme.codex)
-                    dailyStat("Grok", grok, Theme.grok)
-                    dailyStat("合计", claude + codex + grok, Theme.tPrimary)
-                }
-                if points.isEmpty {
-                    dailyEmpty
-                } else {
-                    QuotaDailyChart(points: points)
-                }
-            }
-        }
-    }
-
-    private var recentDailyPoints: [QuotaDailyPoint] {
-        // 账本只存有用量的日子,按行数取后 N 条会跨出区间,必须按日期截断。
-        let cutoff = Calendar.current.date(
-            byAdding: .day, value: -(span.days - 1), to: Date()
-        ) ?? Date()
-        let key = Self.dayKeyFormatter.string(from: cutoff)
-        return (detail.payload?.daily ?? []).filter { $0.d >= key }
-    }
-
-    private func dailyStat(_ title: String, _ tokens: Int, _ tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(title)
-                .font(.system(size: Theme.fontSize(9.5)))
-                .foregroundStyle(Theme.tTertiary)
-            Text(Fmt.human(tokens))
-                .font(.system(size: Theme.fontSize(19), weight: .bold, design: .rounded))
-                .foregroundStyle(tint)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            Text(Fmt.grouped(tokens))
-                .font(.system(size: Theme.fontSize(9), design: .monospaced))
-                .foregroundStyle(Theme.tTertiary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var dailyEmpty: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "chart.bar.xaxis")
-                .font(.system(size: Theme.fontSize(24)))
-                .foregroundStyle(Theme.codex.opacity(0.8))
-            Text("账本里还没有这个区间的用量")
-                .font(.system(size: Theme.fontSize(12), weight: .semibold))
-                .foregroundStyle(Theme.tSecondary)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 210)
-    }
-
     private var controls: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("额度轨迹")
                     .font(.system(size: Theme.fontSize(14), weight: .bold))
                     .foregroundStyle(Theme.tPrimary)
-                Text(span.showsDailyTokens ? "按天聚合 · 真实 token 消耗" : "按分钟聚合 · 剩余额度")
+                Text("按分钟聚合 · 剩余额度")
                     .font(.system(size: Theme.fontSize(9.5)))
                     .foregroundStyle(Theme.tTertiary)
             }
             Spacer()
-            if !span.showsDailyTokens {
-                Picker("", selection: $tool) {
-                    ForEach(QuotaHistoryTool.allCases) { tool in
-                        Text(tool.rawValue).tag(tool)
-                    }
+            Picker("", selection: $tool) {
+                ForEach(QuotaHistoryTool.allCases) { tool in
+                    Text(tool.rawValue).tag(tool)
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 164)
-                .controlSize(.mini)
             }
+            .pickerStyle(.segmented)
+            .frame(width: 164)
+            .controlSize(.mini)
             Picker("", selection: $span) {
                 ForEach(QuotaHistorySpan.allCases) { span in
                     Text(span.label).tag(span)
@@ -512,7 +431,7 @@ struct QuotaHistoryView: View {
                 Text("采样点")
                     .font(.system(size: Theme.fontSize(9.5)))
                     .foregroundStyle(Theme.tTertiary)
-                Text("\(projection.points.count)")
+                Text("\(projection.hoverSamples.count)")
                     .font(.system(size: Theme.fontSize(15), weight: .bold, design: .rounded))
                     .foregroundStyle(Theme.tPrimary)
             }
@@ -563,7 +482,7 @@ struct QuotaHistoryView: View {
             Text("正在开始记录额度轨迹")
                 .font(.system(size: Theme.fontSize(12), weight: .semibold))
                 .foregroundStyle(Theme.tSecondary)
-            Text("Tokei 每 30 秒刷新，曲线按分钟聚合。保持应用运行后，这里会逐步出现数据。")
+            Text("当前工具在所选时间范围内没有额度读数，可切换工具或时间范围查看。Tokei 每 30 秒刷新。")
                 .font(.system(size: Theme.fontSize(10)))
                 .foregroundStyle(Theme.tTertiary)
                 .multilineTextAlignment(.center)
@@ -678,159 +597,8 @@ struct QuotaHistoryView: View {
         return formatter
     }()
 
-    private static let dayKeyFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
 }
 
-/// 长跨度下画每日真实 token 消耗:额度% 快照只保留 7 天,月/年区间没有曲线可画。
-private struct QuotaDailyChart: View {
-    let points: [QuotaDailyPoint]
-
-    @State private var hover: QuotaDailyPoint?
-
-    private struct Bar: Identifiable {
-        var id: String { "\(day.timeIntervalSince1970)-\(tool)" }
-        var day: Date
-        var tool: String
-        var tokens: Int
-    }
-
-    private var bars: [Bar] {
-        points.flatMap { point -> [Bar] in
-            guard let day = Self.dayFormatter.date(from: point.d) else { return [] }
-            return [
-                Bar(day: day, tool: "Claude Code", tokens: point.c),
-                Bar(day: day, tool: "Codex", tokens: point.x),
-                Bar(day: day, tool: "Grok", tokens: point.g),
-            ]
-        }
-    }
-
-    var body: some View {
-        Chart(bars) { bar in
-            BarMark(
-                x: .value("日期", bar.day, unit: .day),
-                y: .value("Token", bar.tokens)
-            )
-            .foregroundStyle(by: .value("工具", bar.tool))
-        }
-        .chartForegroundStyleScale(
-            domain: ["Claude Code", "Codex", "Grok"],
-            range: [Theme.claude, Theme.codex, Theme.grok]
-        )
-        .chartLegend(position: .top, alignment: .trailing, spacing: 10)
-        .chartXAxis {
-            AxisMarks(values: .stride(by: .day, count: axisStrideDays)) { _ in
-                AxisGridLine().foregroundStyle(Color.white.opacity(0.06))
-                AxisValueLabel(format: .dateTime.month(.twoDigits).day(.twoDigits))
-                    .font(.system(size: Theme.fontSize(8.5), design: .monospaced))
-                    .foregroundStyle(Theme.tTertiary)
-            }
-        }
-        .chartYAxis {
-            AxisMarks(position: .leading) { value in
-                AxisGridLine().foregroundStyle(Color.white.opacity(0.08))
-                AxisValueLabel {
-                    if let tokens = value.as(Int.self) {
-                        Text(Fmt.human(tokens))
-                    }
-                }
-                .font(.system(size: Theme.fontSize(8.5), design: .monospaced))
-                .foregroundStyle(Theme.tTertiary)
-            }
-        }
-        .frame(height: 235)
-        .chartOverlay { proxy in
-            GeometryReader { geometry in
-                let plot = geometry[proxy.plotAreaFrame]
-                Rectangle()
-                    .fill(.clear)
-                    .contentShape(Rectangle())
-                    .onContinuousHover { phase in
-                        switch phase {
-                        case .active(let location):
-                            guard plot.contains(location),
-                                  let date: Date = proxy.value(atX: location.x - plot.minX)
-                            else {
-                                hover = nil
-                                return
-                            }
-                            hover = nearestPoint(to: date)
-                        case .ended:
-                            hover = nil
-                        }
-                    }
-                if let hover {
-                    hoverBubble(hover, plot: plot)
-                }
-            }
-        }
-    }
-
-    private var axisStrideDays: Int {
-        max(points.count / 8, 1)
-    }
-
-    private func nearestPoint(to date: Date) -> QuotaDailyPoint? {
-        let key = Self.dayFormatter.string(from: date)
-        return points.first { $0.d == key }
-    }
-
-    private func hoverBubble(_ point: QuotaDailyPoint, plot: CGRect) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(point.d)
-                .font(.system(size: Theme.fontSize(9.5), weight: .semibold, design: .monospaced))
-                .foregroundStyle(Theme.tPrimary)
-            hoverRow("Claude Code", point.c, Theme.claude)
-            hoverRow("Codex", point.x, Theme.codex)
-            hoverRow("Grok", point.g, Theme.grok)
-            Text("合计 \(Fmt.grouped(point.total))")
-                .font(.system(size: Theme.fontSize(8.5), design: .monospaced))
-                .foregroundStyle(Theme.tTertiary)
-        }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 6)
-        .frame(width: 150, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 7)
-                .fill(Color(red: 0.10, green: 0.11, blue: 0.14).opacity(0.96))
-                .shadow(color: Color.black.opacity(0.32), radius: 5, y: 2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 7)
-                .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.75)
-        )
-        .offset(x: plot.minX + 6, y: plot.minY + 4)
-        .allowsHitTesting(false)
-    }
-
-    private func hoverRow(_ title: String, _ tokens: Int, _ tint: Color) -> some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(tint)
-                .frame(width: 5, height: 5)
-            Text(title)
-                .font(.system(size: Theme.fontSize(9)))
-                .foregroundStyle(Theme.tSecondary)
-            Spacer(minLength: 4)
-            Text(Fmt.human(tokens))
-                .font(.system(size: Theme.fontSize(9.5), weight: .semibold, design: .monospaced))
-                .foregroundStyle(Theme.tPrimary)
-        }
-    }
-
-    private static let dayFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
-}
-
-/// Owns hover state so pointer movement redraws only the chart, not the parent
-/// page and its complete history projection.
 private struct QuotaHistoryChart: View {
     let projection: QuotaHistoryProjection
     let start: Date

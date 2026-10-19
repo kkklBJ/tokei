@@ -3000,7 +3000,7 @@ def _iter_codex_token_lines(path, chunk_size=64 * 1024, header_limit=4 * 1024):
             yield value
 
 
-def _codex_session_meta(path, max_lines=20, max_line_bytes=2 * 1024 * 1024):
+def _codex_session_header(path, max_lines=20, max_line_bytes=2 * 1024 * 1024):
     try:
         with open(path, "rb", buffering=0) as fh:
             for _ in range(max_lines):
@@ -3015,18 +3015,22 @@ def _codex_session_meta(path, max_lines=20, max_line_bytes=2 * 1024 * 1024):
                     continue
                 if o.get("type") != "session_meta":
                     continue
-                meta = o.get("payload") or {}
-                parent_id = meta.get("forked_from_id") or meta.get("parent_thread_id")
-                if not parent_id:
-                    source = meta.get("source") or {}
-                    subagent = source.get("subagent") if isinstance(source, dict) else None
-                    spawn = subagent.get("thread_spawn") if isinstance(subagent, dict) else None
-                    if isinstance(spawn, dict):
-                        parent_id = spawn.get("parent_thread_id")
-                return meta.get("id") or meta.get("session_id"), parent_id
+                return o.get("payload") or {}
     except OSError:
         pass
-    return None, None
+    return {}
+
+
+def _codex_session_meta(path, max_lines=20, max_line_bytes=2 * 1024 * 1024):
+    meta = _codex_session_header(path, max_lines, max_line_bytes)
+    parent_id = meta.get("forked_from_id") or meta.get("parent_thread_id")
+    if not parent_id:
+        source = meta.get("source") or {}
+        subagent = source.get("subagent") if isinstance(source, dict) else None
+        spawn = subagent.get("thread_spawn") if isinstance(subagent, dict) else None
+        if isinstance(spawn, dict):
+            parent_id = spawn.get("parent_thread_id")
+    return meta.get("id") or meta.get("session_id"), parent_id
 
 
 def _codex_rollout_files():
@@ -3124,6 +3128,13 @@ def scan_codex(bounds, cache):
             cur_file = f
         sig = f"{st.st_mtime_ns}:{size}"
         entry = fc.get(f)
+        # 旧缓存仅缺项目元数据时读取有界文件头,不用重扫 token 或清空去重结果。
+        project = (entry or {}).get("proj")
+        if not entry or "proj" not in entry:
+            project = _codex_session_header(f).get("cwd")
+            if isinstance(entry, dict):
+                entry["proj"] = project
+                cache["_dirty"] = True
         previous_event_cache_size = (
             entry.get("event_cache_size") if isinstance(entry, dict) else None
         )
@@ -3322,6 +3333,7 @@ def scan_codex(bounds, cache):
                 "sig": sig, "days": entry.get("days", {}) if isinstance(entry, dict) else {},
                 "deduped_days": deduped_days,
                 "session_id": session_id, "forked_from_id": forked_from_id,
+                "proj": project,
                 "limits": file_limits, "limits_ts": file_limits_ts, "plan": file_plan,
                 "g_limits": file_g_limits, "g_ts": file_g_ts, "g_plan": file_g_plan,
                 "last_total": file_last_total, "prev_total_key": prev_total_key,
@@ -11939,6 +11951,19 @@ def build_wrapped(period="all", refresh=True, _cache=None):
             model_tokens = usage.get("in", 0) + usage.get("cr", 0) + usage.get("out", 0)
             model_tok[name] = model_tok.get(name, 0) + model_tokens
 
+    # 项目归属用 session_meta.cwd;只用已经去重后的 days,不再次累加 replay。
+    for entry in cache.get("codex", {}).values():
+        if not isinstance(entry, dict):
+            continue
+        project = os.path.basename((entry.get("proj") or "").rstrip("/")) or "Codex（未归属项目）"
+        for dk, day in entry.get("days", {}).items():
+            if cutoff and dk < cutoff:
+                continue
+            pt = proj_tok.setdefault(project, [0, 0.0])
+            pt[0] += day.get("in", 0) + day.get("out", 0)
+            pt[1] += day.get("cost", 0)
+            day_projs.setdefault(dk, set()).add(project)
+
     # --- Gemini (input 含 cached，thoughts 按输出 token 计入) ---
     for dk, day in cache.get(_GEMINI_DAYS_CACHE_KEY, {}).items():
         if cutoff and dk < cutoff:
@@ -12713,6 +12738,14 @@ def _quota_anchor_cycles(anchors, tool, span, limit, now):
         row.get("confirmed_reset") is True
     ] or rows[-1:]
 
+    # 同一窗口的 reset 可能回退超过 jitter。旧读数的 reset 虽然更晚,
+    # 也不能压住后来持续更新的读数。只排除与最新观测冲突的未来锚点,
+    # 已结束的历史和真实前移重置仍按 reset 排序切分。
+    future = [row for row in rows if int(row["reset"]) > now]
+    if future:
+        latest = max(future, key=lambda row: (row.get("last_seen", 0), int(row["reset"])))
+        rows = [row for row in rows if int(row["reset"]) <= int(latest["reset"])]
+
     cycles = []
     for index, row in enumerate(rows):
         reset = int(row["reset"])
@@ -12744,7 +12777,8 @@ def _quota_cycle_specs(payload, devices, peer_anchors, now):
         for _name, _tools, snapshot, _daily in devices:
             reading = _quota_tool_reading(snapshot if snapshot else payload, tool)
             if reading:
-                dirty |= _record_quota_anchor(anchors, tool, reading[1], reading[0], now)
+                dirty |= _record_quota_anchor(
+                    anchors, tool, reading[1], reading[0], reading[2] or now)
     if dirty:
         _save_quota_anchors(anchors)
     for incoming in peer_anchors:
@@ -12850,6 +12884,23 @@ def projects():
             for mn, mv in day.get("models", {}).items():
                 nm = nice_model(mn)
                 p["model_tok"][nm] = p["model_tok"].get(nm, 0) + token_total(mv)
+
+    # Codex: days 已经排除 fork/replay 和重复文件,不从累计快照重复算费用。
+    for path, entry in cache.get("codex", {}).items():
+        if not isinstance(entry, dict) or not entry.get("proj") or not entry.get("days"):
+            continue
+        project = entry["proj"]
+        p = proj_map.setdefault(project, {"sessions": 0, "tokens": 0, "cost": 0.0,
+                                          "last_active": "", "model_tok": {}, "tools": set()})
+        p["sessions"] += 1
+        p["tools"].add("codex")
+        for dk, day in entry["days"].items():
+            p["tokens"] += day.get("in", 0) + day.get("out", 0)
+            p["cost"] += day.get("cost", 0)
+            p["last_active"] = max(p["last_active"], dk)
+            for model, usage in day.get("models", {}).items():
+                name = f"{nice_model(model)} (Codex)"
+                p["model_tok"][name] = p["model_tok"].get(name, 0) + sum(usage.get(k, 0) for k in ("in", "cr", "out"))
 
     # Pi sessions
     for f, entry in cache.get("pi", {}).items():
